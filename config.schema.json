@@ -1,16 +1,16 @@
 {
-  "pluginAlias": "ExampleHomebridgePlugin",
+  "pluginAlias": "PandaPwrPlugin",
   "pluginType": "platform",
   "singular": true,
   "strictValidation": false,
   "schema": {
     "type": "object",
     "properties": {
-      "name": {
-        "title": "Name",
+      "panda-pwr-ip": {
+        "title": "Panda Pwr IP",
         "type": "string",
         "required": true,
-        "default": "Example Dynamic Platform"
+        "default": ""
       }
     }
   }
