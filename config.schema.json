@@ -11,6 +11,12 @@
         "type": "string",
         "required": true,
         "default": ""
+      },
+      "interval": {
+        "title": "Interval for fetching data (in sec)",
+        "type": "number",
+        "required": true,
+        "default": 6
       }
     }
   }

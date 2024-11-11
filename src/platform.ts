@@ -58,7 +58,6 @@ export class PandaPwrPlatform implements DynamicPlatformPlugin {
     const existingAccessory = this.accessories.get(uuid);
     if (existingAccessory) {
       this.log.info('Restoring existing accessory from cache:', existingAccessory.displayName);
-      this.api.updatePlatformAccessories([existingAccessory]);
       new PandaPwrPlatformAccessory(this, existingAccessory);
     } else {
       this.log.info('Adding new accessory:', this.config['panda-pwr-ip']);
@@ -66,6 +65,8 @@ export class PandaPwrPlatform implements DynamicPlatformPlugin {
       accessory.context.device = {
         'name': 'panda-pwr',
         'ip': this.config['panda-pwr-ip'],
+        'interval': this.config.interval || 6000,
+        'displayName': 'panda-pwr',
       };
       new PandaPwrPlatformAccessory(this, accessory);
       this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);

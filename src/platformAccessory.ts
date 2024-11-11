@@ -31,11 +31,11 @@ export class PandaPwrPlatformAccessory {
 
     // get the LightBulb service if it exists, otherwise create a new LightBulb service
     // you can create multiple services for each accessory
-    this.service = this.accessory.getService(this.platform.Service.Lightbulb) || this.accessory.addService(this.platform.Service.Lightbulb);
+    this.service = this.accessory.getService(this.platform.Service.Switch) || this.accessory.addService(this.platform.Service.Switch);
 
     // set the service name, this is what is displayed as the default name on the Home app
     // in this example we are using the name we stored in the `accessory.context` in the `discoverDevices` method.
-    this.service.setCharacteristic(this.platform.Characteristic.Name, accessory.context.device.exampleDisplayName);
+    this.service.setCharacteristic(this.platform.Characteristic.Name, 'Panda-PWR');
 
     // each service must implement at-minimum the "required characteristics" for the given service type
     // see https://developers.homebridge.io/#/service/Lightbulb
@@ -44,7 +44,6 @@ export class PandaPwrPlatformAccessory {
     this.service.getCharacteristic(this.platform.Characteristic.On)
       .onSet(this.setOn.bind(this)) // SET - bind to the `setOn` method below
       .onGet(this.getOn.bind(this)) // GET - bind to the `getOn` method below
-      .setValue('PandaPwr');
 
     /**
      * Updating characteristics values asynchronously.
@@ -56,6 +55,7 @@ export class PandaPwrPlatformAccessory {
      *
      */
     setInterval(() => {
+      this.platform.log.debug('Getting PandaPwr state...');
       fetch(`http://${accessory.context.device.ip}/update_ele_data`).then((response) =>
         response.json().then(json => {
           this.pandaPwrStates.On = json.power !== 0;
@@ -65,7 +65,7 @@ export class PandaPwrPlatformAccessory {
         this.platform.log.error(e);
         throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
       });
-    }, 5000);
+    }, this.accessory.context.device.interval);
   }
 
   /**
@@ -73,7 +73,6 @@ export class PandaPwrPlatformAccessory {
    * These are sent when the user changes the state of an accessory, for example, turning on a Light bulb.
    */
   async setOn(value: CharacteristicValue) {
-    // implement your own code to turn your device on/off
     const state = value as boolean ? 1 : 0;
     this.pandaPwrStates.On = value as boolean;
     this.platform.log.debug('Set Characteristic On ->', value);
@@ -116,9 +115,9 @@ export class PandaPwrPlatformAccessory {
   async getOn(): Promise<CharacteristicValue> {
     // implement your own code to check if the device is on
     this.platform.log.debug('Get Characteristic On ->', this.pandaPwrStates.On);
-    const data = await fetch(`http://${this.accessory.context.device.ip}/update_ele_data`);
-    const json = await data.json();
-    this.pandaPwrStates.On = json.power !== 0;
+    // const data = await fetch(`http://${this.accessory.context.device.ip}/update_ele_data`);
+    // const json = await data.json();
+    // this.pandaPwrStates.On = json.power !== 0;
     return this.pandaPwrStates.On;
   }
 }
