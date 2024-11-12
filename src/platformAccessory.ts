@@ -63,9 +63,8 @@ export class PandaPwrPlatformAccessory {
         }),
       ).catch(e => {
         this.platform.log.error(e);
-        throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
       });
-    }, this.accessory.context.device.interval);
+    }, this.accessory.context.device.interval * 1000);
   }
 
   /**
