@@ -60,9 +60,9 @@ export class PandaPwrPlatformAccessory {
         this.platform.log.debug('Getting PandaPwr state...');
         const response = await fetch(`http://${accessory.context.device.ip}/update_ele_data`);
         const json = await response.json();
-
         this.pandaPwrStates.On = json.power !== 0;
-        this.pandaPwrStates.Brightness = json.current * 100;
+        this.service.updateCharacteristic(this.platform.Characteristic.On, this.pandaPwrStates.On);
+        this.platform.log.debug('Getting PandaPwr state, state is', this.pandaPwrStates.On);
       } catch (e) {
         this.platform.log.error(e as string);
       }
@@ -88,6 +88,7 @@ export class PandaPwrPlatformAccessory {
 
     const state = value as boolean ? 1 : 0;
     this.pandaPwrStates.On = value as boolean;
+    this.service.updateCharacteristic(this.platform.Characteristic.On, this.pandaPwrStates.On);
     this.platform.log.debug('Set Characteristic On ->', value);
     fetch(`http://${this.accessory.context.device.ip}/set`, {
       'headers': {
@@ -101,6 +102,7 @@ export class PandaPwrPlatformAccessory {
       'credentials': 'omit',
     }).then(response => {
       if (!response.ok) {
+        this.pandaPwrStates.On = !this.pandaPwrStates.On;
         // throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
         this.platform.log.error('Failed to set characteristic', state);
       }
