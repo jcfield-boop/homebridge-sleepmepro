@@ -65,7 +65,7 @@ export class PandaPwrPlatform implements DynamicPlatformPlugin {
       accessory.context.device = {
         'name': 'panda-pwr',
         'ip': this.config['panda-pwr-ip'],
-        'interval': this.config.interval || 6000,
+        'interval': this.config.interval || 6,
         'displayName': 'panda-pwr',
       };
       new PandaPwrPlatformAccessory(this, accessory);
