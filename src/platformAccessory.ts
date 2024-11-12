@@ -43,7 +43,7 @@ export class PandaPwrPlatformAccessory {
     // register handlers for the On/Off Characteristic
     this.service.getCharacteristic(this.platform.Characteristic.On)
       .onSet(this.setOn.bind(this)) // SET - bind to the `setOn` method below
-      .onGet(this.getOn.bind(this)) // GET - bind to the `getOn` method below
+      .onGet(this.getOn.bind(this)); // GET - bind to the `getOn` method below
 
     /**
      * Updating characteristics values asynchronously.
@@ -54,16 +54,17 @@ export class PandaPwrPlatformAccessory {
      * the `updateCharacteristic` method.
      *
      */
-    setInterval(() => {
-      this.platform.log.debug('Getting PandaPwr state...');
-      fetch(`http://${accessory.context.device.ip}/update_ele_data`).then((response) =>
-        response.json().then(json => {
-          this.pandaPwrStates.On = json.power !== 0;
-          this.pandaPwrStates.Brightness = json.current * 100;
-        }),
-      ).catch(e => {
-        this.platform.log.error(e);
-      });
+    setInterval(async () => {
+      try {
+        this.platform.log.debug('Getting PandaPwr state...');
+        const response = await fetch(`http://${accessory.context.device.ip}/update_ele_data`);
+        const json = await response.json();
+
+        this.pandaPwrStates.On = json.power !== 0;
+        this.pandaPwrStates.Brightness = json.current * 100;
+      } catch (e) {
+        this.platform.log.error(e as string);
+      }
     }, this.accessory.context.device.interval * 1000);
   }
 
