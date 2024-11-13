@@ -2,15 +2,25 @@
   "name": "@blackcolt/homebridge-panda-pwr",
   "displayName": "Panda Pwr",
   "type": "module",
-  "version": "1.0.0",
-  "description": "This is a Homebridge plugin for Panda Pwr, hope it will work",
-  "author": "Idan Magled",
+  "version": "1.0.1",
+  "description": "This is a Homebridge plugin for Panda Pwr, it works with the Panda Pwr API to control your Panda Pwr devices.",
+  "author": "Idan Magled <idanmagled@gmail.com> (https://github.com/blackcolt)",
   "license": "Apache-2.0",
   "homepage": "https://github.com/blackcolt/homebridge-panda-pwr#readme",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/blackcolt/homebridge-panda-pwr.git"
   },
+  "funding": [
+    {
+      "type": "Paypal",
+      "url": "https://paypal.me/idanmagled"
+    },
+    {
+      "type": "GitHub",
+      "url": "https://github.com/sponsors/blackcolt"
+    }
+  ],
   "bugs": {
     "url": "https://github.com/blackcolt/homebridge-panda-pwr/issues"
   },
