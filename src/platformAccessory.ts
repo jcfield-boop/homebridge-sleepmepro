@@ -1,5 +1,4 @@
 import type { CharacteristicValue, PlatformAccessory, Service } from 'homebridge';
-
 import type { PandaPwrPlatform } from './platform.js';
 
 /**
@@ -9,19 +8,17 @@ import type { PandaPwrPlatform } from './platform.js';
  */
 export class PandaPwrPlatformAccessory {
   private service: Service;
+  private voltageService: Service; // Added service for voltage
   private lastExecutionTime: number;
-  /**
-   * These are just used to create a working example
-   * You should implement your own code to track the state of your accessory
-   */
+
   private pandaPwrStates = {
     On: false,
-    Brightness: 100,
+    Voltage: 0,
   };
 
   constructor(
-    private readonly platform: PandaPwrPlatform,
-    private readonly accessory: PlatformAccessory,
+      private readonly platform: PandaPwrPlatform,
+      private readonly accessory: PlatformAccessory,
   ) {
     this.lastExecutionTime = 0;
     // set accessory information
@@ -30,39 +27,39 @@ export class PandaPwrPlatformAccessory {
       .setCharacteristic(this.platform.Characteristic.Model, 'PandaPwr')
       .setCharacteristic(this.platform.Characteristic.SerialNumber, 'PandaPwrSerial');
 
-    // get the LightBulb service if it exists, otherwise create a new LightBulb service
-    // you can create multiple services for each accessory
+    // get the Switch service (or create one if it doesn't exist)
     this.service = this.accessory.getService(this.platform.Service.Switch) || this.accessory.addService(this.platform.Service.Switch);
 
-    // set the service name, this is what is displayed as the default name on the Home app
-    // in this example we are using the name we stored in the `accessory.context` in the `discoverDevices` method.
+    // set the service name
     this.service.setCharacteristic(this.platform.Characteristic.Name, 'Panda-PWR');
-
-    // each service must implement at-minimum the "required characteristics" for the given service type
-    // see https://developers.homebridge.io/#/service/Lightbulb
 
     // register handlers for the On/Off Characteristic
     this.service.getCharacteristic(this.platform.Characteristic.On)
-      .onSet(this.setOn.bind(this)) // SET - bind to the `setOn` method below
-      .onGet(this.getOn.bind(this)); // GET - bind to the `getOn` method below
+      .onSet(this.setOn.bind(this)) // SET - bind to the `setOn` method
+      .onGet(this.getOn.bind(this)); // GET - bind to the `getOn` method
 
-    /**
-     * Updating characteristics values asynchronously.
-     *
-     * Example showing how to update the state of a Characteristic asynchronously instead
-     * of using the `on('get')` handlers.
-     * Here we change update the motion sensor trigger states on and off every 10 seconds
-     * the `updateCharacteristic` method.
-     *
-     */
+    // Add the voltage service using the "CurrentTemperature" characteristic
+    // (this will act as a proxy for voltage, adjust if needed)
+    this.voltageService = this.accessory.getService('Voltage') || this.accessory.addService(this.platform.Service.TemperatureSensor, 'Voltage');
+    this.voltageService.setCharacteristic(this.platform.Characteristic.Name, 'Panda Voltage')
+      .setCharacteristic(this.platform.Characteristic.CurrentTemperature, this.pandaPwrStates.Voltage);
+
+    // Update states asynchronously every interval
     setInterval(async () => {
       try {
         this.platform.log.debug('Getting PandaPwr state...');
         const response = await fetch(`http://${accessory.context.device.ip}/update_ele_data`);
         const json = await response.json();
+
+        // Update power state
         this.pandaPwrStates.On = json.power !== 0;
         this.service.updateCharacteristic(this.platform.Characteristic.On, this.pandaPwrStates.On);
-        this.platform.log.debug('Getting PandaPwr state, state is', this.pandaPwrStates.On);
+
+        // Update voltage state
+        this.pandaPwrStates.Voltage = json.current || 0;
+        this.voltageService.updateCharacteristic(this.platform.Characteristic.CurrentTemperature, this.pandaPwrStates.Voltage);
+
+        this.platform.log.debug('Updated PandaPwr state, power:', this.pandaPwrStates.On, 'voltage:', this.pandaPwrStates.Voltage);
       } catch (e) {
         this.platform.log.error(e as string);
       }
@@ -80,8 +77,8 @@ export class PandaPwrPlatformAccessory {
     // Check if at least 5 seconds (5000 milliseconds) have passed
     if (timeSinceLastCall < 5000) {
       this.platform.log.debug('Skipping setOn: Less than 5 seconds since the last call.');
-      // eslint-disable-next-line max-len
-      this.service.updateCharacteristic(this.platform.Characteristic.On, new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.RESOURCE_BUSY));
+      this.service.updateCharacteristic(this.platform.Characteristic.On,
+        new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.RESOURCE_BUSY));
       return;
     }
     this.lastExecutionTime = currentTime;
@@ -90,6 +87,7 @@ export class PandaPwrPlatformAccessory {
     this.pandaPwrStates.On = value as boolean;
     this.service.updateCharacteristic(this.platform.Characteristic.On, this.pandaPwrStates.On);
     this.platform.log.debug('Set Characteristic On ->', value);
+    // Send power command to the device
     fetch(`http://${this.accessory.context.device.ip}/set`, {
       'headers': {
         'cache-control': 'no-cache',
@@ -103,37 +101,20 @@ export class PandaPwrPlatformAccessory {
     }).then(response => {
       if (!response.ok) {
         this.pandaPwrStates.On = !this.pandaPwrStates.On;
-        // throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
         this.platform.log.error('Failed to set characteristic', state);
       }
       this.platform.log.debug('Set Characteristic On Succeeded', state);
     }).catch(e => {
       this.platform.log.error(e);
-      // throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
     });
   }
 
   /**
    * Handle the "GET" requests from HomeKit
-   * These are sent when HomeKit wants to know the current state of the accessory, for example, checking if a Light bulb is on.
-   *
-   * GET requests should return as fast as possible. A long delay here will result in
-   * HomeKit being unresponsive and a bad user experience in general.
-   *
-   * If your device takes time to respond you should update the status of your device
-   * asynchronously instead using the `updateCharacteristic` method instead.
-   * In this case, you may decide not to implement `onGet` handlers, which may speed up
-   * the responsiveness of your device in the Home app.
-
-   * @example
-   * this.service.updateCharacteristic(this.platform.Characteristic.On, true)
+   * These are sent when HomeKit wants to know the current state of the accessory.
    */
   async getOn(): Promise<CharacteristicValue> {
-    // implement your own code to check if the device is on
     this.platform.log.debug('Get Characteristic On ->', this.pandaPwrStates.On);
-    // const data = await fetch(`http://${this.accessory.context.device.ip}/update_ele_data`);
-    // const json = await data.json();
-    // this.pandaPwrStates.On = json.power !== 0;
     return this.pandaPwrStates.On;
   }
 }
