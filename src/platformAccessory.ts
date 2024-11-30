@@ -11,7 +11,7 @@ export class PandaPwrPlatformAccessory {
   private pandaSetUrl: string;
   private pandaPwrStates = {
     On: false,
-    Voltage: 0,
+    Voltage: 0.0001,
     Power: 0,
   };
 
@@ -24,18 +24,9 @@ export class PandaPwrPlatformAccessory {
     this.pandaSetUrl = `${this.pandaUrl}/set`;
     this.pandaGetStateUrl = `${this.pandaUrl}/get_state`;
 
-    setInterval(async () => {
-      const response = await fetch(this.pandaGetStateUrl);
-      const json = await response.json();
-      this.accessory.getService(this.platform.Service.AccessoryInformation)!
-        .setCharacteristic(this.platform.Characteristic.Manufacturer, 'Panda')
-        .setCharacteristic(this.platform.Characteristic.Model, 'PandaPwr')
-        .setCharacteristic(this.platform.Characteristic.SerialNumber, json.ap_pwd)
-        .setCharacteristic(this.platform.Characteristic.Version, json.fw_version);
-    }, 500);
+    setTimeout(async () => await this.getPandaData(accessory), 500);
     this.service = this.accessory.getService(this.platform.Service.Switch) || this.accessory.addService(this.platform.Service.Switch);
-    this.service.setCharacteristic(this.platform.Characteristic.Name, 'Panda-PWR');
-
+    this.service.setCharacteristic(this.platform.Characteristic.Name, 'PandaPWR');
     this.service.getCharacteristic(this.platform.Characteristic.On)
       .onSet(this.setOn.bind(this))
       .onGet(this.getOn.bind(this));
@@ -51,12 +42,10 @@ export class PandaPwrPlatformAccessory {
       .setCharacteristic(this.platform.Characteristic.BatteryLevel, this.pandaPwrStates.Power)
       .setCharacteristic(this.platform.Characteristic.ChargingState, this.platform.Characteristic.ChargingState.NOT_CHARGING)
       .setCharacteristic(this.platform.Characteristic.StatusLowBattery,
-        this.pandaPwrStates.Power < 20 ?
+        this.pandaPwrStates.Power < 1 ?
           this.platform.Characteristic.StatusLowBattery.BATTERY_LEVEL_LOW : this.platform.Characteristic.StatusLowBattery.BATTERY_LEVEL_NORMAL);
 
-    setInterval(async () => {
-      await this.getPandaData(this.accessory);
-    }, this.accessory.context.device.interval * 1000);
+    setInterval(async () => await this.getPandaData(this.accessory), this.accessory.context.device.interval * 1000);
   }
 
   private async getPandaData(accessory: PlatformAccessory) {
@@ -66,17 +55,26 @@ export class PandaPwrPlatformAccessory {
       const json = await response.json();
       this.pandaPwrStates.On = json.power !== 0;
       this.service.updateCharacteristic(this.platform.Characteristic.On, this.pandaPwrStates.On);
-      this.pandaPwrStates.Voltage = json.voltage || 0;
+      this.pandaPwrStates.Voltage = this.normalizeVoltageData(json.voltage || 0);
       this.voltageService.updateCharacteristic(this.platform.Characteristic.CurrentAmbientLightLevel, this.pandaPwrStates.Voltage);
-      this.pandaPwrStates.Power = json.power || 0;  // Default to 100 if no value
+      this.pandaPwrStates.Power = json.power * 10 || 0;  // Default to 100 if no value
       this.batteryService.updateCharacteristic(this.platform.Characteristic.BatteryLevel, this.pandaPwrStates.Power);
       this.batteryService.updateCharacteristic(this.platform.Characteristic.ChargingState,
         this.pandaPwrStates.On ? this.platform.Characteristic.ChargingState.CHARGING : this.platform.Characteristic.ChargingState.NOT_CHARGING);
       this.platform.log.debug('Updated PandaPwr state, power:',
         this.pandaPwrStates.On, 'voltage:', this.pandaPwrStates.Voltage, 'battery level:', this.pandaPwrStates.Power);
     } catch (e) {
-      this.platform.log.error(e as string);
+      this.platform.log.warn(e as string);
     }
+  }
+
+  private normalizeVoltageData = (voltage: number)=>{
+    if (voltage > 100) {
+      return 100;
+    } else if(voltage === 0){
+      return 0.0001
+    }
+    return voltage;
   }
 
   /**

@@ -61,65 +61,17 @@ export class PandaPwrPlatform implements DynamicPlatformPlugin {
       new PandaPwrPlatformAccessory(this, existingAccessory);
     } else {
       this.log.info('Adding new accessory:', this.config['panda-pwr-ip']);
-      const accessory = new this.api.platformAccessory('panda-pwr', uuid);
+      const accessory = new this.api.platformAccessory('pandaPwr', uuid);
       accessory.context.device = {
-        'name': 'panda-pwr',
+        'name': 'pandaPwr',
         'ip': this.config['panda-pwr-ip'],
         'interval': this.config.interval || 6,
-        'displayName': 'panda-pwr',
+        'displayName': 'pandaPwr',
       };
       new PandaPwrPlatformAccessory(this, accessory);
       this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
     }
     this.discoveredCacheUUIDs.push(uuid);
-
-    //
-    //   // see if an accessory with the same uuid has already been registered and restored from
-    //   // the cached devices we stored in the `configureAccessory` method above
-    //   const existingAccessory = this.accessories.get(uuid);
-    //
-    //   if (existingAccessory) {
-    //     // the accessory already exists
-    //     this.log.info('Restoring existing accessory from cache:', existingAccessory.displayName);
-    //
-    //     // if you need to update the accessory.context then you should run `api.updatePlatformAccessories`. e.g.:
-    //     // existingAccessory.context.device = device;
-    //     // this.api.updatePlatformAccessories([existingAccessory]);
-    //
-    //     // create the accessory handler for the restored accessory
-    //     // this is imported from `platformAccessory.ts`
-    //     new ExamplePlatformAccessory(this, existingAccessory);
-    //
-    //     // it is possible to remove platform accessories at any time using `api.unregisterPlatformAccessories`, e.g.:
-    //     // remove platform accessories when no longer present
-    //     // this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [existingAccessory]);
-    //     // this.log.info('Removing existing accessory from cache:', existingAccessory.displayName);
-    //   } else {
-    //     // the accessory does not yet exist, so we need to create it
-    //     this.log.info('Adding new accessory:', device.exampleDisplayName);
-    //
-    //     // create a new accessory
-    //     const accessory = new this.api.platformAccessory(device.exampleDisplayName, uuid);
-    //
-    //     // store a copy of the device object in the `accessory.context`
-    //     // the `context` property can be used to store any data about the accessory you may need
-    //     accessory.context.device = device;
-    //
-    //     // create the accessory handler for the newly create accessory
-    //     // this is imported from `platformAccessory.ts`
-    //     new ExamplePlatformAccessory(this, accessory);
-    //
-    //     // link the accessory to your platform
-    //     this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
-    //   }
-    //
-    //   // push into discoveredCacheUUIDs
-    //   this.discoveredCacheUUIDs.push(uuid);
-    // }
-
-    // you can also deal with accessories from the cache which are no longer present by removing them from Homebridge
-    // for example, if your plugin logs into a cloud account to retrieve a device list, and a user has previously removed a device
-    // from this cloud account, then this device will no longer be present in the device list but will still be in the Homebridge cache
     for (const [uuid, accessory] of this.accessories) {
       if (!this.discoveredCacheUUIDs.includes(uuid)) {
         this.log.info('Removing existing accessory from cache:', accessory.displayName);

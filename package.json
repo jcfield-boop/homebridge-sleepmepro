@@ -1,5 +1,5 @@
 {
-  "name": "@blackcolt/homebridge-panda-pwr",
+  "name": "homebridge-panda-pwr",
   "displayName": "Panda Pwr",
   "type": "module",
   "version": "1.0.3",
