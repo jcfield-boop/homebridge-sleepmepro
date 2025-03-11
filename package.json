@@ -1,22 +1,24 @@
 {
-  "name": "homebridge-plugin-name",
-  "displayName": "Plugin Name",
+  "name": "homebridge-sleepme",
+  "displayName": "Homebridge SleepMe",
   "type": "module",
   "version": "1.0.0",
-  "private": true,
-  "description": "A short description about what your plugin does.",
+  "private": false,
+  "description": "A Homebridge plugin for SleepMe DockPro",
   "author": "Your Name",
-  "license": "Apache-2.0",
-  "homepage": "https://github.com/USERNAME/GITHUB_PROJECT_NAME#readme",
+  "license": "MIT",
+  "homepage": "https://github.com/yourusername/homebridge-sleepme#readme",
   "repository": {
     "type": "git",
-    "url": "https://github.com/USERNAME/GITHUB_PROJECT_NAME.git"
+    "url": "https://github.com/yourusername/homebridge-sleepme.git"
   },
   "bugs": {
-    "url": "https://github.com/USERNAME/GITHUB_PROJECT_NAME/issues"
+    "url": "https://github.com/yourusername/homebridge-sleepme/issues"
   },
   "keywords": [
-    "homebridge-plugin"
+    "homebridge-plugin",
+    "sleepme",
+    "dockpro"
   ],
   "main": "dist/index.js",
   "engines": {
@@ -24,23 +26,25 @@
     "homebridge": "^1.8.0 || ^2.0.0-beta.0"
   },
   "scripts": {
-    "build": "rimraf ./dist && tsc",
-    "lint": "eslint . --max-warnings=0",
+    "build": "tsc",
+    "lint": "eslint src --ext .ts",
     "prepublishOnly": "npm run lint && npm run build",
-    "watch": "npm run build && npm link && nodemon"
+    "watch": "tsc -w",
+    "test": "jest"
   },
   "dependencies": {
+    "axios": "^0.21.1",
     "homebridge-lib": "^7.1.4"
   },
   "devDependencies": {
     "@eslint/js": "^9.21.0",
-    "@types/node": "^22.13.5",
+    "@types/node": "^14.14.31",
     "eslint": "^9.21.0",
     "homebridge": "^2.0.0-beta.0",
     "nodemon": "^3.1.9",
     "rimraf": "^6.0.1",
     "ts-node": "^10.9.2",
-    "typescript": "^5.7.3",
+    "typescript": "^4.2.3",
     "typescript-eslint": "^8.24.1"
   }
 }

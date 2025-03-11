@@ -1,17 +1,72 @@
 {
-  "pluginAlias": "ExampleHomebridgePlugin",
-  "pluginType": "platform",
-  "singular": true,
-  "strictValidation": false,
-  "schema": {
-    "type": "object",
-    "properties": {
-      "name": {
-        "title": "Name",
-        "type": "string",
-        "required": true,
-        "default": "Example Dynamic Platform"
+  "pluginAlias": "SleepMeAccessory",
+  "pluginType": "accessory",
+  "schema": [
+    {
+      "label": "General Settings",
+      "type": "group",
+      "collapsed": false,
+      "children": [
+        {
+          "label": "Accessory Name",
+          "type": "input",
+          "variable": "name",
+          "placeholder": "DockPro",
+          "required": true
+        },
+        {
+          "label": "API Token",
+          "type": "password",
+          "variable": "apiToken",
+          "description": "Get this from your account details, Developer API section at sleep.me",
+          "required": true
+        },
+        {
+          "label": "Temperature Unit",
+          "type": "dropdown",
+          "variable": "unit",
+          "options": ["C", "F"],
+          "default": "F",
+          "description": "Select temperature unit (Celsius or Fahrenheit)"
+        }
+      ]
+    },
+    {
+      "label": "Schedule",
+      "type": "array",
+      "variable": "schedule",
+      "items": {
+        "type": "object",
+        "schema": [
+          {
+            "label": "Time",
+            "type": "input",
+            "variable": "time",
+            "placeholder": "22:00",
+            "description": "Time in HH:MM format (24-hour clock)",
+            "pattern": "^([01]\\d|2[0-3]):([0-5]\\d)$",
+            "required": true
+          },
+          {
+            "label": "Temperature",
+            "type": "integer",
+            "variable": "temperature",
+            "placeholder": "20",
+            "default": 20,
+            "min": 10,
+            "max": 35,
+            "description": "Target temperature (10-35°C)"
+          },
+          {
+            "label": "Warm Awake Duration (min)",
+            "type": "integer",
+            "variable": "warmAwake",
+            "placeholder": "10",
+            "description": "Minutes before wake-up to slightly increase temperature (optional)",
+            "required": false
+          }
+        ]
       }
     }
-  }
+  ]
 }
