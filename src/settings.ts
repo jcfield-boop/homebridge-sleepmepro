@@ -6,4 +6,4 @@ export const PLATFORM_NAME = 'SleepMeAccessory';
 /**
  * This must match the name of your plugin as defined the package.json `name` property
  */
-export const PLUGIN_NAME = 'homebridge-sleepme';
+export const PLUGIN_NAME = 'homebridge-sleepmepro';
