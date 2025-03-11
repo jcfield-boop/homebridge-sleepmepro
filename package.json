@@ -1,19 +1,19 @@
 {
-  "name": "homebridge-sleepme",
+  "name": "homebridge-sleepmepro",
   "displayName": "Homebridge SleepMe",
   "type": "module",
   "version": "1.0.0",
   "private": false,
   "description": "A Homebridge plugin for SleepMe DockPro",
-  "author": "Your Name",
+  "author": "James Field",
   "license": "MIT",
-  "homepage": "https://github.com/yourusername/homebridge-sleepme#readme",
+  "homepage": "https://github.com/jcfield-boop/homebridge-sleepmepro#readme",
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/homebridge-sleepme.git"
+    "url": "https://github.com/jcfield-boop/homebridge-sleepmepro.git"
   },
   "bugs": {
-    "url": "https://github.com/yourusername/homebridge-sleepme/issues"
+    "url": "https://github.com/jcfield-boop/homebridge-sleepmepro/issues"
   },
   "keywords": [
     "homebridge-plugin",
