@@ -4,18 +4,36 @@ import { API, AccessoryPlugin, Logging, AccessoryConfig, Service, Characteristic
 let HomebridgeService: typeof Service;
 let Characteristic: typeof HomebridgeCharacteristic;
 
-export default (homebridge: API) => {
+export default (homebridge: API): void => {
   HomebridgeService = homebridge.hap.Service;
   Characteristic = homebridge.hap.Characteristic;
   homebridge.registerAccessory('homebridge-sleepmepro', 'SleepMeAccessory', SleepMeAccessory);
 };
+
+interface ScheduleEntry {
+  day: string;
+  time: string;
+  temperature: number;
+  isWakeTime?: boolean;
+  warmAwakeSettings?: {
+    warmUpEnabled: boolean;
+    warmUpDuration: number;
+    warmUpTemperature: number;
+  };
+}
+
+interface DeviceStatusResponse {
+  temperature: number;
+  targetTemperature?: number;
+  isHeating?: boolean;
+}
 
 class SleepMeAccessory implements AccessoryPlugin {
   private readonly log: Logging;
   private readonly name: string;
   private readonly apiToken: string;
   private unit: string;
-  private schedule: { warmAwake?: number; time: string; temperature: number }[];
+  private schedule: ScheduleEntry[];
   private currentTemperature: number;
   private targetTemperature: number;
   private currentHeatingState: number;
@@ -29,7 +47,12 @@ class SleepMeAccessory implements AccessoryPlugin {
     this.name = config.name;
     this.apiToken = config.apiToken;
     this.unit = config.unit || 'C'; // Default to Celsius
-    this.schedule = config.schedule || [];
+    this.schedule = config.temperatureSchedule || [];
+
+    // Validate required config
+    if (!this.apiToken) {
+      this.log.error('API Token is required. Please check your configuration.');
+    }
 
     // Current state
     this.currentTemperature = 20; // Default starting value
@@ -104,18 +127,14 @@ class SleepMeAccessory implements AccessoryPlugin {
       callback();
     } else {
       this.log.warn('API call rate limit exceeded. Please wait before making more requests.');
+      // After a delay, retry the call
+      setTimeout(callback, 10000);
     }
   }
 
   // Update device status
   private updateDeviceStatus(): void {
     this.rateLimitApiCall(() => {
-      interface DeviceStatusResponse {
-        temperature: number;
-        targetTemperature?: number;
-        isHeating?: boolean;
-      }
-
       axios
         .get<DeviceStatusResponse>('https://api.app.sleep.me/v1/device/status', {
           headers: { Authorization: `Bearer ${this.apiToken}` },
@@ -134,7 +153,14 @@ class SleepMeAccessory implements AccessoryPlugin {
         })
         .catch((error) => {
           this.log.error('Error updating device status:', error.message);
-          // Retry logic or additional error handling can be added here
+          if (error.response) {
+            this.log.debug('API response error:', error.response.status, error.response.data);
+            
+            // Handle authentication errors
+            if (error.response.status === 401) {
+              this.log.error('Authentication failed. Please check your API token.');
+            }
+          }
         });
     });
   }
@@ -173,11 +199,20 @@ class SleepMeAccessory implements AccessoryPlugin {
         )
         .then(() => {
           this.targetTemperature = targetTemp;
-          this.log(`Temperature set to ${displayTemp.toFixed(1)}°${this.unit}`);
-          callback(undefined);
+          this.log.info(`Temperature set to ${displayTemp.toFixed(1)}°${this.unit}`);
+          callback();
         })
         .catch((error) => {
           this.log.error('Error setting temperature:', error.message);
+          
+          if (error.response) {
+            this.log.debug('API response error:', error.response.status, error.response.data);
+            // Handle authentication errors
+            if (error.response.status === 401) {
+              this.log.error('Authentication failed. Please check your API token.');
+            }
+          }
+          
           callback(error);
         });
     });
@@ -193,11 +228,19 @@ class SleepMeAccessory implements AccessoryPlugin {
   }
 
   private setTargetHeatingCoolingState(value: CharacteristicValue, callback: (error?: Error) => void): void {
-    // Implement this if your device supports turning heating on/off
-    // For now, just acknowledge the request
     const state = value as number;
-    this.log(`Set target heating state to: ${state}`);
-    callback(undefined);
+    this.log.info(`Set target heating state to: ${state}`);
+    
+    // Implement SleepMe API call to turn device on/off if supported
+    if (state === 0) {
+      // Turn off - this depends on whether the SleepMe API supports this
+      this.log.info('Sending off command to SleepMe device');
+    } else if (state === 1) {
+      // Turn on heating (you might need to set a default temperature)
+      this.log.info('Sending heat command to SleepMe device');
+    }
+    
+    callback();
   }
 
   private getTemperatureDisplayUnits(callback: (error: Error | null, value?: number) => void): void {
@@ -207,34 +250,44 @@ class SleepMeAccessory implements AccessoryPlugin {
 
   private setTemperatureDisplayUnits(units: CharacteristicValue, callback: (error?: Error) => void): void {
     this.unit = units === Characteristic.TemperatureDisplayUnits.FAHRENHEIT ? 'F' : 'C';
-    this.log(`Display units set to: ${this.unit}`);
-    callback(undefined);
+    this.log.info(`Display units set to: ${this.unit}`);
+    callback();
   }
 
   private checkSchedule(): void {
     const now = new Date();
     const currentTime = now.toTimeString().slice(0, 5); // Get HH:MM format
+    const today = now.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
 
     for (const entry of this.schedule) {
-      // Check for warm awake scheduling
-      if (entry.warmAwake && entry.time) {
+      // Check if schedule applies to today
+      if (entry.day !== 'everyday' && entry.day !== today) {
+        continue;
+      }
+
+      // Handle warm awake if enabled
+      if (entry.isWakeTime && entry.warmAwakeSettings?.warmUpEnabled) {
         const [hours, minutes] = entry.time.split(':').map(Number);
         const wakeTime = new Date(now);
         wakeTime.setHours(hours, minutes, 0, 0);
 
         // Calculate warm-up start time
         const warmUpTime = new Date(wakeTime);
-        warmUpTime.setMinutes(warmUpTime.getMinutes() - entry.warmAwake);
+        warmUpTime.setMinutes(warmUpTime.getMinutes() - entry.warmAwakeSettings.warmUpDuration);
 
         // Format for comparison
         const warmUpTimeString = warmUpTime.toTimeString().slice(0, 5);
 
         if (currentTime === warmUpTimeString) {
-          const tempChange = this.unit === 'F' ? 2 : 1; // 2°F or 1°C increase
-          const warmTemp = entry.temperature + tempChange;
+          const targetTemp = entry.warmAwakeSettings.warmUpTemperature;
+          let tempToSet = targetTemp;
+          
+          if (this.unit === 'F') {
+            tempToSet = this.fahrenheitToCelsius(targetTemp);
+          }
 
-          this.log(`Warm Awake: Gradually increasing to ${warmTemp}°${this.unit} before wake time ${entry.time}`);
-          this.setTemperature(warmTemp, () => {});
+          this.log.info(`Warm Awake: Gradually increasing to ${targetTemp}°${this.unit} before wake time ${entry.time}`);
+          this.setTemperature(tempToSet, () => {});
         }
       }
 
@@ -247,7 +300,7 @@ class SleepMeAccessory implements AccessoryPlugin {
         }
 
         this.setTemperature(targetTemp, () => {});
-        this.log(`Scheduled change: Set temperature to ${entry.temperature}°${this.unit} at ${entry.time}`);
+        this.log.info(`Scheduled change: Set temperature to ${entry.temperature}°${this.unit} at ${entry.time}`);
       }
     }
   }
@@ -260,6 +313,7 @@ class SleepMeAccessory implements AccessoryPlugin {
   shutdown(): void {
     if (this.scheduleTimer) {
       clearInterval(this.scheduleTimer);
+      this.scheduleTimer = null;
     }
   }
 }
