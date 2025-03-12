@@ -1,78 +1,66 @@
 {
   "pluginAlias": "sleepmepro",
   "pluginType": "accessory",
-  "schema": [
-    {
-      "label": "General Settings",
-      "type": "group",
-      "collapsed": false,
-      "children": [
-        {
-          "label": "Accessory Name",
-          "type": "input",
-          "variable": "name",
-          "placeholder": "DockPro",
-          "description": "Enter a name for this device",
-          "required": true
-        },
-        {
-          "label": "API Token",
-          "type": "password",
-          "variable": "apiToken",
-          "description": "Get this from your account details, Developer API section at sleep.me",
-          "required": true
-        },
-        {
-          "label": "Temperature Unit",
-          "type": "dropdown",
-          "variable": "unit",
-          "default": "F",
-          "options": [
-            { "label": "Celsius (°C)", "value": "C" },
-            { "label": "Fahrenheit (°F)", "value": "F" }
-          ],
-          "description": "Select temperature unit"
-        }
-      ]
-    },
-    {
-      "label": "Schedule Settings",
-      "type": "array",
-      "variable": "schedule",
-      "description": "Configure sleep temperature schedule",
-      "items": {
-        "type": "object",
-        "schema": [
-          {
-            "label": "Time",
-            "type": "input",
-            "variable": "time",
-            "placeholder": "22:00",
-            "description": "Enter time in HH:MM format (24-hour clock)",
-            "pattern": "^([01]\\d|2[0-3]):([0-5]\\d)$",
-            "required": true
-          },
-          {
-            "label": "Temperature",
-            "type": "integer",
-            "variable": "temperature",
-            "placeholder": "20",
-            "default": 20,
-            "min": 10,
-            "max": 35,
-            "description": "Set the target temperature (10-35°C)",
-            "required": true
-          },
-          {
-            "label": "Warm Awake Duration",
-            "type": "integer",
-            "variable": "warmAwake",
-            "placeholder": "10",
-            "description": "Minutes before wake-up to increase temperature (optional)",
-            "required": false
+  "singular": true,
+  "schema": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "title": "Accessory Name",
+        "type": "string",
+        "default": "DockPro",
+        "description": "Enter a name for this device",
+        "required": true
+      },
+      "apiToken": {
+        "title": "API Token",
+        "type": "string",
+        "format": "password",
+        "description": "Get this from your account details, Developer API section at sleep.me",
+        "required": true
+      },
+      "unit": {
+        "title": "Temperature Unit",
+        "type": "string",
+        "default": "F",
+        "enum": ["C", "F"],
+        "enumNames": ["Celsius (°C)", "Fahrenheit (°F)"],
+        "description": "Select temperature unit"
+      },
+      "schedule": {
+        "title": "Sleep Schedule",
+        "type": "array",
+        "description": "Configure sleep temperature schedule",
+        "items": {
+          "type": "object",
+          "properties": {
+            "time": {
+              "title": "Time",
+              "type": "string",
+              "placeholder": "22:00",
+              "description": "Enter time in HH:MM format (24-hour clock)",
+              "pattern": "^([01]\\d|2[0-3]):([0-5]\\d)$",
+              "required": true
+            },
+            "temperature": {
+              "title": "Temperature",
+              "type": "number",
+              "default": 20,
+              "minimum": 10,
+              "maximum": 35,
+              "description": "Set the target temperature (10-35°C)",
+              "required": true
+            },
+            "warmAwake": {
+              "title": "Warm Awake Duration",
+              "type": "number",
+              "default": 0,
+              "description": "Minutes before wake-up to increase temperature (optional)",
+              "required":false
+            }
           }
-        ]
+        }
       }
     }
-  ]
+  }
 }
