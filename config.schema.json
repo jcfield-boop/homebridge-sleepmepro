@@ -30,14 +30,34 @@
       "schedule": {
         "title": "Sleep Schedule",
         "type": "array",
-        "description": "Configure sleep temperature schedule",
+        "description": "Configure daily sleep temperature schedule",
+        "default": [
+          {
+            "day": "everyday",
+            "time": "21:30",
+            "temperature": 20,
+            "warmUpEnabled": true,
+            "warmUpDuration": 10,
+            "wakeTime": "06:00"
+          }
+        ],
         "items": {
           "type": "object",
           "properties": {
+            "day": {
+              "title": "Day of Week",
+              "type": "string",
+              "enum": ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "everyday"],
+              "enumNames": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday", "Every Day"],
+              "default": "everyday",
+              "description": "Select the day for this schedule entry",
+              "required": true
+            },
             "time": {
               "title": "Time",
               "type": "string",
-              "placeholder": "22:00",
+              "placeholder": "21:30",
+              "default": "21:30",
               "description": "Enter time in HH:MM format (24-hour clock)",
               "pattern": "^([01]\\d|2[0-3]):([0-5]\\d)$",
               "required": true
@@ -51,12 +71,33 @@
               "description": "Set the target temperature (10-35°C)",
               "required": true
             },
-            "warmAwake": {
+            "warmUpEnabled": {
+              "title": "Enable Warm Awake",
+              "type": "boolean",
+              "default": true,
+              "description": "Enable gradual warm-up before wake time"
+            },
+            "warmUpDuration": {
               "title": "Warm Awake Duration",
               "type": "number",
-              "default": 0,
-              "description": "Minutes before wake-up to increase temperature (optional)",
-              "required":false
+              "default": 10,
+              "minimum": 5,
+              "maximum": 60,
+              "description": "Minutes before wake-up to begin warming (5-60 minutes)",
+              "condition": {
+                "functionBody": "return model.warmUpEnabled === true;"
+              }
+            },
+            "wakeTime": {
+              "title": "Wake-up Time",
+              "type": "string",
+              "placeholder": "06:00",
+              "default": "06:00",
+              "description": "Enter wake-up time in HH:MM format (24-hour clock)",
+              "pattern": "^([01]\\d|2[0-3]):([0-5]\\d)$",
+              "condition": {
+                "functionBody": "return model.warmUpEnabled === true;"
+              }
             }
           }
         }
