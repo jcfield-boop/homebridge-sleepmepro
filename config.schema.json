@@ -26,11 +26,11 @@
           "label": "Temperature Unit",
           "type": "dropdown",
           "variable": "unit",
+          "default": "F",
           "options": [
             { "label": "Celsius (°C)", "value": "C" },
             { "label": "Fahrenheit (°F)", "value": "F" }
           ],
-          "default": "F",
           "description": "Select temperature unit"
         }
       ]
@@ -55,7 +55,6 @@
           {
             "label": "Temperature",
             "type": "integer",
-            "variable": "temperature",
             "placeholder": "20",
             "default": 20,
             "min": 10,
