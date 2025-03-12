@@ -27,18 +27,15 @@
         "enumNames": ["Celsius (°C)", "Fahrenheit (°F)"],
         "description": "Select temperature unit"
       },
-      "schedule": {
-        "title": "Sleep Schedule",
+      "temperatureSchedule": {
+        "title": "Temperature Schedule",
         "type": "array",
-        "description": "Configure daily sleep temperature schedule",
+        "description": "Configure temperature changes throughout the day",
         "default": [
           {
             "day": "everyday",
             "time": "21:30",
-            "temperature": 20,
-            "warmUpEnabled": true,
-            "warmUpDuration": 10,
-            "wakeTime": "06:00"
+            "temperature": 20
           }
         ],
         "items": {
@@ -50,7 +47,7 @@
               "enum": ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "everyday"],
               "enumNames": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday", "Every Day"],
               "default": "everyday",
-              "description": "Select the day for this schedule entry",
+              "description": "Select the day for this temperature change",
               "required": true
             },
             "time": {
@@ -71,32 +68,48 @@
               "description": "Set the target temperature (10-35°C)",
               "required": true
             },
-            "warmUpEnabled": {
-              "title": "Enable Warm Awake",
+            "isWakeTime": {
+              "title": "This is a wake-up time",
               "type": "boolean",
-              "default": true,
-              "description": "Enable gradual warm-up before wake time"
+              "default": false,
+              "description": "Enable to configure warm-up settings for wake-up"
             },
-            "warmUpDuration": {
-              "title": "Warm Awake Duration",
-              "type": "number",
-              "default": 10,
-              "minimum": 5,
-              "maximum": 60,
-              "description": "Minutes before wake-up to begin warming (5-60 minutes)",
+            "warmAwakeSettings": {
+              "title": "Warm Awake Settings",
+              "type": "object",
+              "description": "Configure warm-up before wake time",
               "condition": {
-                "functionBody": "return model.warmUpEnabled === true;"
-              }
-            },
-            "wakeTime": {
-              "title": "Wake-up Time",
-              "type": "string",
-              "placeholder": "06:00",
-              "default": "06:00",
-              "description": "Enter wake-up time in HH:MM format (24-hour clock)",
-              "pattern": "^([01]\\d|2[0-3]):([0-5]\\d)$",
-              "condition": {
-                "functionBody": "return model.warmUpEnabled === true;"
+                "functionBody": "return model.isWakeTime === true;"
+              },
+              "properties": {
+                "warmUpEnabled": {
+                  "title": "Enable Warm Awake",
+                  "type": "boolean",
+                  "default": true,
+                  "description": "Enable gradual warm-up before wake time"
+                },
+                "warmUpDuration": {
+                  "title": "Warm-up Duration",
+                  "type": "number",
+                  "default": 10,
+                  "minimum": 5,
+                  "maximum": 60,
+                  "description": "Minutes before wake-up to begin warming (5-60 minutes)",
+                  "condition": {
+                    "functionBody": "return model.warmAwakeSettings.warmUpEnabled === true;"
+                  }
+                },
+                "warmUpTemperature": {
+                  "title": "Warm-up Temperature",
+                  "type": "number",
+                  "default": 25,
+                  "minimum": 10,
+                  "maximum": 35,
+                  "description": "Target temperature to reach at wake-up time",
+                  "condition": {
+                    "functionBody": "return model.warmAwakeSettings.warmUpEnabled === true;"
+                  }
+                }
               }
             }
           }
