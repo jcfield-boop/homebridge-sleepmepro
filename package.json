@@ -2,7 +2,7 @@
   "name": "homebridge-sleepmepro",
   "displayName": "Homebridge SleepMePro",
   "type": "module",
-  "version": "1.1.5",
+  "version": "1.1.6",
   "private": false,
   "description": "A Homebridge plugin for SleepMe DockPro",
   "author": "James Field",
