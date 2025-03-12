@@ -2,7 +2,7 @@
   "name": "homebridge-sleepmepro",
   "displayName": "Homebridge SleepMe",
   "type": "module",
-  "version": "1.0.0",
+  "version": "1.1.1",
   "private": false,
   "description": "A Homebridge plugin for SleepMe DockPro",
   "author": "James Field",
@@ -30,7 +30,8 @@
     "lint": "eslint src --ext .ts",
     "prepublishOnly": "npm run lint && npm run build",
     "watch": "tsc -w",
-    "test": "jest"
+    "test": "jest",
+    "lint:ts": "eslint --ext .ts src"
   },
   "dependencies": {
     "axios": "^0.21.1",
@@ -38,7 +39,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.21.0",
-    "@types/node": "^14.14.31",
+    "@types/node": "^18.14.0",
     "eslint": "^9.21.0",
     "homebridge": "^2.0.0-beta.0",
     "nodemon": "^3.1.9",
