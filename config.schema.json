@@ -1,5 +1,5 @@
 {
-  "pluginAlias": "SleepMeAccessory",
+  "pluginAlias": "sleepmepro",
   "pluginType": "accessory",
   "schema": [
     {
@@ -12,6 +12,7 @@
           "type": "input",
           "variable": "name",
           "placeholder": "DockPro",
+          "description": "Enter a name for this device",
           "required": true
         },
         {
@@ -26,18 +27,19 @@
           "type": "dropdown",
           "variable": "unit",
           "options": [
-            "C",
-            "F"
+            { "label": "Celsius (°C)", "value": "C" },
+            { "label": "Fahrenheit (°F)", "value": "F" }
           ],
           "default": "F",
-          "description": "Select temperature unit (Celsius or Fahrenheit)"
+          "description": "Select temperature unit"
         }
       ]
     },
     {
-      "label": "Schedule",
+      "label": "Schedule Settings",
       "type": "array",
       "variable": "schedule",
+      "description": "Configure sleep temperature schedule",
       "items": {
         "type": "object",
         "schema": [
@@ -46,7 +48,7 @@
             "type": "input",
             "variable": "time",
             "placeholder": "22:00",
-            "description": "Time in HH:MM format (24-hour clock)",
+            "description": "Enter time in HH:MM format (24-hour clock)",
             "pattern": "^([01]\\d|2[0-3]):([0-5]\\d)$",
             "required": true
           },
@@ -58,14 +60,15 @@
             "default": 20,
             "min": 10,
             "max": 35,
-            "description": "Target temperature (10-35°C)"
+            "description": "Set the target temperature (10-35°C)",
+            "required": true
           },
           {
-            "label": "Warm Awake Duration (min)",
+            "label": "Warm Awake Duration",
             "type": "integer",
             "variable": "warmAwake",
             "placeholder": "10",
-            "description": "Minutes before wake-up to slightly increase temperature (optional)",
+            "description": "Minutes before wake-up to increase temperature (optional)",
             "required": false
           }
         ]
