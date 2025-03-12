@@ -1,13 +1,13 @@
 import axios from 'axios';
-import { API, AccessoryPlugin, Logging, AccessoryConfig, Service, Characteristic } from 'homebridge';
+import { API, AccessoryPlugin, Logging, AccessoryConfig, Service, Characteristic as HomebridgeCharacteristic, CharacteristicValue } from 'homebridge';
 
 let HomebridgeService: typeof Service;
-let Characteristic: typeof Characteristic;
+let Characteristic: typeof HomebridgeCharacteristic;
 
 export default (homebridge: API) => {
   HomebridgeService = homebridge.hap.Service;
   Characteristic = homebridge.hap.Characteristic;
-  homebridge.registerAccessory("homebridge-sleepmepro", "SleepMeAccessory", SleepMeAccessory);
+  homebridge.registerAccessory('homebridge-sleepmepro', 'SleepMeAccessory', SleepMeAccessory);
 };
 
 class SleepMeAccessory implements AccessoryPlugin {
@@ -28,7 +28,7 @@ class SleepMeAccessory implements AccessoryPlugin {
     this.log = log;
     this.name = config.name;
     this.apiToken = config.apiToken;
-    this.unit = config.unit || "C"; // Default to Celsius
+    this.unit = config.unit || 'C'; // Default to Celsius
     this.schedule = config.schedule || [];
 
     // Current state
@@ -46,12 +46,12 @@ class SleepMeAccessory implements AccessoryPlugin {
     // Required characteristics
     this.service
       .getCharacteristic(Characteristic.CurrentTemperature)
-      .on("get", this.getCurrentTemperature.bind(this));
+      .on('get', this.getCurrentTemperature.bind(this));
 
     this.service
       .getCharacteristic(Characteristic.TargetTemperature)
-      .on("get", this.getTargetTemperature.bind(this))
-      .on("set", this.setTemperature.bind(this))
+      .on('get', this.getTargetTemperature.bind(this))
+      .onSet(this.setTemperature.bind(this))
       .setProps({
         minValue: 10, // Minimum allowed temperature (in Celsius)
         maxValue: 35, // Maximum allowed temperature (in Celsius)
@@ -60,17 +60,17 @@ class SleepMeAccessory implements AccessoryPlugin {
 
     this.service
       .getCharacteristic(Characteristic.CurrentHeatingCoolingState)
-      .on("get", this.getCurrentHeatingCoolingState.bind(this));
+      .on('get', this.getCurrentHeatingCoolingState.bind(this));
 
     this.service
       .getCharacteristic(Characteristic.TargetHeatingCoolingState)
-      .on("get", this.getTargetHeatingCoolingState.bind(this))
-      .on("set", this.setTargetHeatingCoolingState.bind(this));
+      .on('get', this.getTargetHeatingCoolingState.bind(this))
+      .onSet(this.setTargetHeatingCoolingState.bind(this));
 
     this.service
       .getCharacteristic(Characteristic.TemperatureDisplayUnits)
-      .on("get", this.getTemperatureDisplayUnits.bind(this))
-      .on("set", this.setTemperatureDisplayUnits.bind(this));
+      .on('get', this.getTemperatureDisplayUnits.bind(this))
+      .onSet(this.setTemperatureDisplayUnits.bind(this));
 
     // Start the schedule checker
     this.scheduleTimer = setInterval(() => this.checkSchedule(), 60000); // Check every minute
@@ -103,7 +103,7 @@ class SleepMeAccessory implements AccessoryPlugin {
       this.apiCallCount++;
       callback();
     } else {
-      this.log.warn("API call rate limit exceeded. Please wait before making more requests.");
+      this.log.warn('API call rate limit exceeded. Please wait before making more requests.');
     }
   }
 
@@ -130,7 +130,7 @@ class SleepMeAccessory implements AccessoryPlugin {
         this.log.debug(`Device status updated: Current temp: ${this.currentTemperature}°C, Target: ${this.targetTemperature}°C, Heating: ${this.currentHeatingState}`);
       })
       .catch((error) => {
-        this.log.error("Error updating device status:", error.message);
+        this.log.error('Error updating device status:', error.message);
         // Retry logic or additional error handling can be added here
       });
     });
@@ -140,7 +140,7 @@ class SleepMeAccessory implements AccessoryPlugin {
   private getCurrentTemperature(callback: (error: Error | null, value?: number) => void): void {
     this.updateDeviceStatus(); // Refresh the status
 
-    const temp = this.unit === "F" ? 
+    const temp = this.unit === 'F' ? 
       this.celsiusToFahrenheit(this.currentTemperature) : 
       this.currentTemperature;
 
@@ -149,7 +149,7 @@ class SleepMeAccessory implements AccessoryPlugin {
   }
 
   private getTargetTemperature(callback: (error: Error | null, value?: number) => void): void {
-    const temp = this.unit === "F" ? 
+    const temp = this.unit === 'F' ? 
       this.celsiusToFahrenheit(this.targetTemperature) : 
       this.targetTemperature;
 
@@ -157,9 +157,9 @@ class SleepMeAccessory implements AccessoryPlugin {
     callback(null, this.targetTemperature); // HomeKit expects Celsius
   }
 
-  private setTemperature(temp: number, callback: (error?: Error) => void): void {
-    let targetTemp = temp;
-    const displayTemp = this.unit === "F" ? this.celsiusToFahrenheit(targetTemp) : targetTemp;
+  private setTemperature(value: CharacteristicValue, callback: (error?: Error) => void): void {
+    let targetTemp = value as number;
+    const displayTemp = this.unit === 'F' ? this.celsiusToFahrenheit(targetTemp) : targetTemp;
 
     this.rateLimitApiCall(() => {
       axios.post('https://api.app.sleep.me/v1/device/setTemperature', {
@@ -173,7 +173,7 @@ class SleepMeAccessory implements AccessoryPlugin {
         callback(undefined);
       })
       .catch(error => {
-        this.log.error("Error setting temperature:", error.message);
+        this.log.error('Error setting temperature:', error.message);
         callback(error);
       });
     });
@@ -188,23 +188,24 @@ class SleepMeAccessory implements AccessoryPlugin {
     callback(null, this.currentHeatingState > 0 ? 1 : 0);
   }
 
-  private setTargetHeatingCoolingState(state: number, callback: (error?: Error) => void): void {
+  private setTargetHeatingCoolingState(value: CharacteristicValue, callback: (error?: Error) => void): void {
     // Implement this if your device supports turning heating on/off
     // For now, just acknowledge the request
+    const state = value as number;
     this.log(`Set target heating state to: ${state}`);
-    callback(null);
+    callback(undefined);
   }
 
   private getTemperatureDisplayUnits(callback: (error: Error | null, value?: number) => void): void {
-    const units = this.unit === "F" ? Characteristic.TemperatureDisplayUnits.FAHRENHEIT : 
+    const units = this.unit === 'F' ? Characteristic.TemperatureDisplayUnits.FAHRENHEIT : 
                                      Characteristic.TemperatureDisplayUnits.CELSIUS;
     callback(null, units);
   }
 
-  private setTemperatureDisplayUnits(units: number, callback: (error?: Error) => void): void {
-    this.unit = units === Characteristic.TemperatureDisplayUnits.FAHRENHEIT ? "F" : "C";
+  private setTemperatureDisplayUnits(units: CharacteristicValue, callback: (error?: Error) => void): void {
+    this.unit = units === Characteristic.TemperatureDisplayUnits.FAHRENHEIT ? 'F' : 'C';
     this.log(`Display units set to: ${this.unit}`);
-    callback(null);
+    callback(undefined);
   }
 
   private checkSchedule(): void {
@@ -226,7 +227,7 @@ class SleepMeAccessory implements AccessoryPlugin {
         const warmUpTimeString = warmUpTime.toTimeString().slice(0, 5);
 
         if (currentTime === warmUpTimeString) {
-          const tempChange = this.unit === "F" ? 2 : 1; // 2°F or 1°C increase
+          const tempChange = this.unit === 'F' ? 2 : 1; // 2°F or 1°C increase
           const warmTemp = entry.temperature + tempChange;
 
           this.log(`Warm Awake: Gradually increasing to ${warmTemp}°${this.unit} before wake time ${entry.time}`);
@@ -238,7 +239,7 @@ class SleepMeAccessory implements AccessoryPlugin {
       if (entry.time === currentTime) {
         // Convert temperature if needed
         let targetTemp = entry.temperature;
-        if (this.unit === "F") {
+        if (this.unit === 'F') {
           targetTemp = this.fahrenheitToCelsius(targetTemp);
         }
 
