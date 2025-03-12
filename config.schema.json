@@ -25,7 +25,10 @@
           "label": "Temperature Unit",
           "type": "dropdown",
           "variable": "unit",
-          "options": ["C", "F"],
+          "options": [
+            "C",
+            "F"
+          ],
           "default": "F",
           "description": "Select temperature unit (Celsius or Fahrenheit)"
         }
