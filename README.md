@@ -3,7 +3,7 @@
 A Homebridge plugin for controlling your SleepMe device through Apple HomeKit. This integration allows you to control the temperature of your SleepMe device and take advantage of HomeKit automation capabilities.
 
 <p align="center">
-<img src="https://github.com/homebridge/branding/raw/master/logos/homebridge-color-round-stylized.png" width="150">
+<img src="hhttps://raw.githubusercontent.com/homebridge/branding/latest/logos/homebridge-color-round-stylized.png" width="150">
 </p>
 
 ## Features
