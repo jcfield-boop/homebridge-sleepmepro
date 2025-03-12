@@ -41,6 +41,7 @@ class SleepMeAccessory implements AccessoryPlugin {
   private apiCallTimestamp: number;
   private service: Service;
   private scheduleTimer: NodeJS.Timeout | null;
+  private deviceId: string | null;
 
   constructor(log: Logging, config: AccessoryConfig) {
     this.log = log;
@@ -48,6 +49,7 @@ class SleepMeAccessory implements AccessoryPlugin {
     this.apiToken = config.apiToken;
     this.unit = config.unit || 'C'; // Default to Celsius
     this.schedule = config.temperatureSchedule || [];
+    this.deviceId = null;
 
     // Validate required config
     if (!this.apiToken) {
@@ -99,7 +101,7 @@ class SleepMeAccessory implements AccessoryPlugin {
     this.scheduleTimer = setInterval(() => this.checkSchedule(), 60000); // Check every minute
 
     // Initial update
-    this.updateDeviceStatus();
+    this.fetchDeviceIdAndUpdateStatus();
   }
 
   // Convert temperatures
@@ -109,6 +111,28 @@ class SleepMeAccessory implements AccessoryPlugin {
 
   private fahrenheitToCelsius(fahrenheit: number): number {
     return ((fahrenheit - 32) * 5) / 9;
+  }
+
+  // Fetch device ID and update status
+  private fetchDeviceIdAndUpdateStatus(): void {
+    axios
+      .get('https://api.app.sleep.me/v1/devices', {
+        headers: { Authorization: `Bearer ${this.apiToken}` },
+      })
+      .then((response) => {
+        const devices = response.data;
+        if (devices.length === 0) {
+          this.log.error('No devices found. Please check your API token or device configuration.');
+          return;
+        }
+
+        this.deviceId = devices[0]?.id; // Use the first device (or modify this logic if needed)
+        this.log.info(`Using device ID: ${this.deviceId}`);
+        this.updateDeviceStatus();
+      })
+      .catch((error) => {
+        this.log.error('Error fetching devices:', error.message);
+      });
   }
 
   // Rate limiting function
@@ -134,9 +158,14 @@ class SleepMeAccessory implements AccessoryPlugin {
 
   // Update device status
   private updateDeviceStatus(): void {
+    if (!this.deviceId) {
+      this.log.error('Device ID not found. Cannot update device status.');
+      return;
+    }
+
     this.rateLimitApiCall(() => {
       axios
-        .get<DeviceStatusResponse>('https://api.app.sleep.me/v1/device/status', {
+        .get<DeviceStatusResponse>(`https://api.app.sleep.me/v1/device/${this.deviceId}/status`, {
           headers: { Authorization: `Bearer ${this.apiToken}` },
         })
         .then((response) => {
@@ -223,7 +252,6 @@ class SleepMeAccessory implements AccessoryPlugin {
   }
 
   private getTargetHeatingCoolingState(callback: (error: Error | null, value?: number) => void): void {
-    // For simplicity, we'll assume the target state is the same as current
     callback(null, this.currentHeatingState > 0 ? 1 : 0);
   }
 
@@ -233,10 +261,10 @@ class SleepMeAccessory implements AccessoryPlugin {
     
     // Implement SleepMe API call to turn device on/off if supported
     if (state === 0) {
-      // Turn off - this depends on whether the SleepMe API supports this
+      // Turn off
       this.log.info('Sending off command to SleepMe device');
     } else if (state === 1) {
-      // Turn on heating (you might need to set a default temperature)
+      // Turn on heating
       this.log.info('Sending heat command to SleepMe device');
     }
     
@@ -256,8 +284,8 @@ class SleepMeAccessory implements AccessoryPlugin {
 
   private checkSchedule(): void {
     const now = new Date();
-    const currentTime = now.toTimeString().slice(0, 5); // Get HH:MM format
-    const today = now.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+    const currentTime = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }); // Get HH:MM format in local time
+    const today = now.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase(); // Get current weekday in local time
 
     for (const entry of this.schedule) {
       // Check if schedule applies to today
@@ -276,7 +304,7 @@ class SleepMeAccessory implements AccessoryPlugin {
         warmUpTime.setMinutes(warmUpTime.getMinutes() - entry.warmAwakeSettings.warmUpDuration);
 
         // Format for comparison
-        const warmUpTimeString = warmUpTime.toTimeString().slice(0, 5);
+        const warmUpTimeString = warmUpTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 
         if (currentTime === warmUpTimeString) {
           const targetTemp = entry.warmAwakeSettings.warmUpTemperature;
