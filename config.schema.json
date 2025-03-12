@@ -55,6 +55,7 @@
           {
             "label": "Temperature",
             "type": "integer",
+            "variable": "temperature",
             "placeholder": "20",
             "default": 20,
             "min": 10,
