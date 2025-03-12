@@ -1,5 +1,8 @@
 import axios from 'axios';
-import { API, AccessoryPlugin, Logging, AccessoryConfig, Service, Characteristic as HomebridgeCharacteristic, CharacteristicValue } from 'homebridge';
+import {
+  API, AccessoryPlugin, Logging, AccessoryConfig, Service,
+  Characteristic as HomebridgeCharacteristic, CharacteristicValue,
+} from 'homebridge';
 
 let HomebridgeService: typeof Service;
 let Characteristic: typeof HomebridgeCharacteristic;
@@ -26,6 +29,7 @@ class SleepMeAccessory implements AccessoryPlugin {
   private targetTemperature: number;
   private currentHeatingState: number;
   private service: Service;
+  private informationService: Service;
   private deviceId?: string;
   private firmwareVersion?: string;
   private scheduleTimer: NodeJS.Timeout | null;
@@ -34,259 +38,184 @@ class SleepMeAccessory implements AccessoryPlugin {
     this.log = log;
     this.name = config.name;
     this.apiToken = config.apiToken;
-    this.unit = config.unit || 'C'; // Default to Celsius
-    this.currentTemperature = 20; // Default starting value
-    this.targetTemperature = 20;  // Default starting value
-    this.currentHeatingState = 0; // 0 = OFF, 1 = HEAT
+    this.unit = config.unit || 'C'; 
+    this.currentTemperature = 20; 
+    this.targetTemperature = 20;
+    this.currentHeatingState = 0; 
 
-    // Initialize the thermostat service
     this.service = new HomebridgeService.Thermostat(this.name);
 
-    // Required characteristics
-    this.service
-      .getCharacteristic(Characteristic.CurrentTemperature)
-      .on('get', this.getCurrentTemperature.bind(this));
+    this.service.getCharacteristic(Characteristic.CurrentTemperature)
+      .onGet(this.getCurrentTemperature.bind(this));
 
-    this.service
-      .getCharacteristic(Characteristic.TargetTemperature)
-      .on('get', this.getTargetTemperature.bind(this))
+    this.service.getCharacteristic(Characteristic.TargetTemperature)
+      .onGet(this.getTargetTemperature.bind(this))
       .onSet(this.setTemperature.bind(this));
 
-    this.service
-      .getCharacteristic(Characteristic.CurrentHeatingCoolingState)
-      .on('get', this.getCurrentHeatingCoolingState.bind(this));
+    this.service.getCharacteristic(Characteristic.CurrentHeatingCoolingState)
+      .onGet(this.getCurrentHeatingCoolingState.bind(this));
 
-    this.service
-      .getCharacteristic(Characteristic.TargetHeatingCoolingState)
-      .on('get', this.getTargetHeatingCoolingState.bind(this))
+    this.service.getCharacteristic(Characteristic.TargetHeatingCoolingState)
+      .onGet(this.getTargetHeatingCoolingState.bind(this))
       .onSet(this.setTargetHeatingCoolingState.bind(this));
 
-    this.service
-      .getCharacteristic(Characteristic.TemperatureDisplayUnits)
-      .on('get', this.getTemperatureDisplayUnits.bind(this))
+    this.service.getCharacteristic(Characteristic.TemperatureDisplayUnits)
+      .onGet(this.getTemperatureDisplayUnits.bind(this))
       .onSet(this.setTemperatureDisplayUnits.bind(this));
 
-    // Add firmware version characteristic
-    this.service.addCharacteristic(Characteristic.FirmwareRevision)
-      .on('get', (callback) => {
-        callback(null, this.firmwareVersion || 'Unknown');
-      });
+    this.informationService = new HomebridgeService.AccessoryInformation()
+      .setCharacteristic(Characteristic.Manufacturer, 'SleepMe')
+      .setCharacteristic(Characteristic.Model, 'DockPro')
+      .setCharacteristic(Characteristic.SerialNumber, 'Unknown')
+      .setCharacteristic(Characteristic.FirmwareRevision, 'Unknown');
 
-    // Fetch the device ID and update the status
     this.fetchDeviceIdAndUpdateStatus();
 
-    // Initialize the schedule timer to check for schedule every minute
-    this.scheduleTimer = setInterval(() => this.checkSchedule(), 60000); // Check every minute
+    this.scheduleTimer = setInterval(() => this.checkSchedule(), 60000);
   }
 
-  private fetchDeviceIdAndUpdateStatus(): void {
-    axios
-      .get('https://api.app.sleep.me/v1/devices', {
+  private async fetchDeviceIdAndUpdateStatus(): Promise<void> {
+    try {
+      const response = await axios.get('https://api.app.sleep.me/v1/devices', {
         headers: { Authorization: `Bearer ${this.apiToken}` },
-      })
-      .then((response) => {
-        // Log the full response for debugging purposes
-        this.log.debug('Devices fetched:', response.data);
-
-        const devices = response.data;
-
-        // Check if devices array is empty or malformed
-        if (!Array.isArray(devices) || devices.length === 0) {
-          this.log.error('No devices found in API response. Please check the API token or device configuration.');
-          return;
-        }
-
-        // Use the first device (modify logic if you expect multiple devices)
-        this.deviceId = devices[0]?.id;
-
-        if (!this.deviceId) {
-          this.log.error('Device ID not found in the first device response. Please check the API structure.');
-          return;
-        }
-
-        this.log.info(`Using device ID: ${this.deviceId}`);
-
-        // Fetch device details to get the firmware version
-        this.fetchDeviceDetailsAndUpdateStatus();
-      })
-      .catch((error) => {
-        this.log.error('Error fetching devices:', error.message);
-        if (error.response) {
-          this.log.debug('API response error:', error.response.status, error.response.data);
-
-          // Handle authentication errors
-          if (error.response.status === 401) {
-            this.log.error('Authentication failed. Please check your API token.');
-          }
-        }
       });
+
+      const devices = response.data;
+
+      if (!Array.isArray(devices) || devices.length === 0) {
+        this.log.error('No devices found.');
+        return;
+      }
+
+      this.deviceId = devices[0]?.id;
+      if (!this.deviceId) {
+        this.log.error('Device ID not found.');
+        return;
+      }
+
+      this.log.info(`Using device ID: ${this.deviceId}`);
+      await this.fetchDeviceDetailsAndUpdateStatus();
+    } catch (error) {
+      this.log.error('Error fetching devices:', error);
+    }
   }
 
-  private fetchDeviceDetailsAndUpdateStatus(): void {
+  private async fetchDeviceDetailsAndUpdateStatus(): Promise<void> {
     if (!this.deviceId) {
-      this.log.error('Device ID is not set. Cannot fetch device details.');
+      this.log.error('Device ID is not set.');
       return;
     }
 
-    axios
-      .get(`https://api.app.sleep.me/v1/devices/${this.deviceId}`, {
+    try {
+      const response = await axios.get(`https://api.app.sleep.me/v1/devices/${this.deviceId}`, {
         headers: { Authorization: `Bearer ${this.apiToken}` },
-      })
-      .then((response) => {
-        // Log the full device details for debugging
-        this.log.debug('Device details fetched:', response.data);
-
-        const deviceDetails = response.data;
-
-        // Parse the firmware version from the device details
-        if (deviceDetails && deviceDetails.firmwareVersion) {
-          this.firmwareVersion = deviceDetails.firmwareVersion;
-          this.log.info(`Firmware Version: ${this.firmwareVersion}`);
-        } else {
-          this.log.warn('Firmware version not found in the device details.');
-        }
-
-        // Continue with the normal update of device status
-        this.updateDeviceStatus();
-      })
-      .catch((error) => {
-        this.log.error('Error fetching device details:', error.message);
-        if (error.response) {
-          this.log.debug('API response error:', error.response.status, error.response.data);
-
-          // Handle authentication errors
-          if (error.response.status === 401) {
-            this.log.error('Authentication failed. Please check your API token.');
-          }
-        }
       });
+
+      this.firmwareVersion = response.data?.firmwareVersion || 'Unknown';
+      this.log.info(`Firmware Version: ${this.firmwareVersion}`);
+      this.informationService.setCharacteristic(Characteristic.FirmwareRevision, this.firmwareVersion || 'Unknown');
+
+      await this.updateDeviceStatus();
+    } catch (error) {
+      this.log.error('Error fetching device details:', error);
+    }
   }
 
-  private updateDeviceStatus(): void {
+  private async updateDeviceStatus(): Promise<void> {
     if (!this.deviceId) {
-      this.log.error('Device ID is not set. Cannot update device status.');
+      this.log.error('Device ID is not set.');
       return;
     }
 
-    axios
-      .get<DeviceStatusResponse>(`https://api.app.sleep.me/v1/device/status/${this.deviceId}`, {
+    try {
+      const response = await axios.get<DeviceStatusResponse>(`https://api.app.sleep.me/v1/device/status/${this.deviceId}`, {
         headers: { Authorization: `Bearer ${this.apiToken}` },
-      })
-      .then((response) => {
-        this.currentTemperature = response.data.temperature;
-        if (response.data.targetTemperature !== undefined) {
-          this.targetTemperature = response.data.targetTemperature;
-        }
-        if (response.data.isHeating !== undefined) {
-          this.currentHeatingState = response.data.isHeating ? 1 : 0;
-        }
-        this.log.debug(
-          `Device status updated: Current temp: ${this.currentTemperature}°C, Target: ${this.targetTemperature}°C, Heating: ${this.currentHeatingState}`,
-        );
-      })
-      .catch((error) => {
-        this.log.error('Error updating device status:', error.message);
-        if (error.response) {
-          this.log.debug('API response error:', error.response.status, error.response.data);
-
-          // Handle authentication errors
-          if (error.response.status === 401) {
-            this.log.error('Authentication failed. Please check your API token.');
-          }
-        }
       });
+
+      this.currentTemperature = response.data.temperature;
+      this.targetTemperature = response.data.targetTemperature ?? this.targetTemperature;
+      this.currentHeatingState = response.data.isHeating ? 1 : 0;
+    } catch (error) {
+      this.log.error('Error updating device status:', error);
+    }
   }
 
-  private getCurrentTemperature(callback: (error: Error | null, value?: number) => void): void {
-    this.updateDeviceStatus(); // Refresh the status
+  private async setTargetHeatingCoolingState(value: CharacteristicValue): Promise<void> {
+    if (!this.deviceId) {
+      this.log.error('Device ID is missing.');
+      return;
+    }
 
-    const temp = this.unit === 'F' ? this.celsiusToFahrenheit(this.currentTemperature) : this.currentTemperature;
-
-    this.log.debug(`Getting current temperature: ${temp}°${this.unit}`);
-    callback(null, this.currentTemperature); // HomeKit expects Celsius
-  }
-
-  private getTargetTemperature(callback: (error: Error | null, value?: number) => void): void {
-    const temp = this.unit === 'F' ? this.celsiusToFahrenheit(this.targetTemperature) : this.targetTemperature;
-
-    this.log.debug(`Getting target temperature: ${temp}°${this.unit}`);
-    callback(null, this.targetTemperature); // HomeKit expects Celsius
-  }
-
-  private setTemperature(value: CharacteristicValue, callback: (error?: Error) => void): void {
-    const targetTemp = value as number;
-    const displayTemp = this.unit === 'F' ? this.celsiusToFahrenheit(targetTemp) : targetTemp;
-
-    axios
-      .post(
-        `https://api.app.sleep.me/v1/device/setTemperature/${this.deviceId}`,
-        {
-          temperature: targetTemp,
-        },
-        {
-          headers: { Authorization: `Bearer ${this.apiToken}` },
-        },
-      )
-      .then(() => {
-        this.targetTemperature = targetTemp;
-        this.log.info(`Temperature set to ${displayTemp.toFixed(1)}°${this.unit}`);
-        callback();
-      })
-      .catch((error) => {
-        this.log.error('Error setting temperature:', error.message);
-        callback(error);
-      });
-  }
-
-  private getCurrentHeatingCoolingState(callback: (error: Error | null, value?: number) => void): void {
-    callback(null, this.currentHeatingState);
-  }
-
-  private getTargetHeatingCoolingState(callback: (error: Error | null, value?: number) => void): void {
-    callback(null, this.currentHeatingState > 0 ? 1 : 0);
-  }
-
-  private setTargetHeatingCoolingState(value: CharacteristicValue, callback: (error?: Error) => void): void {
     const state = value as number;
-    this.log.info(`Set target heating state to: ${state}`);
+    let mode;
 
-    if (state === 0) {
-      this.log.info('Sending off command to SleepMe device');
-    } else if (state === 1) {
-      this.log.info('Sending heat command to SleepMe device');
+    switch (state) {
+    case 0: mode = 'off'; break;
+    case 1: mode = 'heat'; break;
+    case 2: mode = 'cool'; break;
+    case 3: mode = 'auto'; break;
+    default: this.log.error('Invalid mode'); return;
     }
 
-    callback();
+    try {
+      await axios.post(`https://api.app.sleep.me/v1/device/setMode/${this.deviceId}`, { mode }, {
+        headers: { Authorization: `Bearer ${this.apiToken}` },
+      });
+
+      this.currentHeatingState = state;
+      this.log.info(`Mode set to: ${mode}`);
+    } catch (error) {
+      this.log.error('Error setting mode:', error);
+    }
   }
 
-  private getTemperatureDisplayUnits(callback: (error: Error | null, value?: number) => void): void {
-    const units = this.unit === 'F' ? Characteristic.TemperatureDisplayUnits.FAHRENHEIT : Characteristic.TemperatureDisplayUnits.CELSIUS;
-    callback(null, units);
+  private getCurrentTemperature(): number {
+    return this.currentTemperature;
   }
 
-  private setTemperatureDisplayUnits(units: CharacteristicValue, callback: (error?: Error) => void): void {
+  private getTargetTemperature(): number {
+    return this.targetTemperature;
+  }
+
+  private async setTemperature(value: CharacteristicValue): Promise<void> {
+    if (!this.deviceId) {
+      this.log.error('Device ID is missing.');
+      return;
+    }
+
+    const targetTemp = value as number;
+
+    try {
+      await axios.post(`https://api.app.sleep.me/v1/device/setTemperature/${this.deviceId}`, { temperature: targetTemp }, {
+        headers: { Authorization: `Bearer ${this.apiToken}` },
+      });
+
+      this.targetTemperature = targetTemp;
+      this.log.info(`Temperature set to ${targetTemp}°C`);
+    } catch (error) {
+      this.log.error('Error setting temperature:', error);
+    }
+  }
+
+  private getCurrentHeatingCoolingState(): number {
+    return this.currentHeatingState;
+  }
+
+  private getTargetHeatingCoolingState(): number {
+    return this.currentHeatingState > 0 ? 1 : 0;
+  }
+
+  private getTemperatureDisplayUnits(): number {
+    return this.unit === 'F' ? Characteristic.TemperatureDisplayUnits.FAHRENHEIT : Characteristic.TemperatureDisplayUnits.CELSIUS;
+  }
+
+  private setTemperatureDisplayUnits(units: CharacteristicValue): void {
     this.unit = units === Characteristic.TemperatureDisplayUnits.FAHRENHEIT ? 'F' : 'C';
-    this.log.info(`Display units set to: ${this.unit}`);
-    callback();
   }
 
-  private checkSchedule(): void {
-    // Your existing schedule check logic...
-  }
+  private checkSchedule(): void {}
 
   getServices(): Service[] {
-    return [this.service];
-  }
-
-  // Clean up on shutdown
-  shutdown(): void {
-    if (this.scheduleTimer) {
-      clearInterval(this.scheduleTimer);
-      this.scheduleTimer = null;
-    }
-  }
-
-  private celsiusToFahrenheit(celsius: number): number {
-    return (celsius * 9) / 5 + 32;
+    return [this.informationService, this.service];
   }
 }
