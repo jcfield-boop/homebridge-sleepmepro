@@ -15,7 +15,7 @@ class SleepMeAccessory implements AccessoryPlugin {
   private readonly name: string;
   private readonly apiToken: string;
   private unit: string;
-  private schedule: any[];
+  private schedule: { warmAwake?: number; time: string; temperature: number }[];
   private currentTemperature: number;
   private targetTemperature: number;
   private currentHeatingState: number;
@@ -55,7 +55,7 @@ class SleepMeAccessory implements AccessoryPlugin {
       .setProps({
         minValue: 10, // Minimum allowed temperature (in Celsius)
         maxValue: 35, // Maximum allowed temperature (in Celsius)
-        minStep: 0.5  // Temperature adjustment increments
+        minStep: 0.5, // Temperature adjustment increments
       });
 
     this.service
@@ -81,11 +81,11 @@ class SleepMeAccessory implements AccessoryPlugin {
 
   // Convert temperatures
   private celsiusToFahrenheit(celsius: number): number {
-    return (celsius * 9 / 5) + 32;
+    return (celsius * 9) / 5 + 32;
   }
 
   private fahrenheitToCelsius(fahrenheit: number): number {
-    return (fahrenheit - 32) * 5 / 9;
+    return ((fahrenheit - 32) * 5) / 9;
   }
 
   // Rate limiting function
@@ -116,23 +116,26 @@ class SleepMeAccessory implements AccessoryPlugin {
         isHeating?: boolean;
       }
 
-      axios.get<DeviceStatusResponse>('https://api.app.sleep.me/v1/device/status', {
-        headers: { Authorization: `Bearer ${this.apiToken}` }
-      })
-      .then((response) => {
-        this.currentTemperature = response.data.temperature;
-        if (response.data.targetTemperature !== undefined) {
-          this.targetTemperature = response.data.targetTemperature;
-        }
-        if (response.data.isHeating !== undefined) {
-          this.currentHeatingState = response.data.isHeating ? 1 : 0;
-        }
-        this.log.debug(`Device status updated: Current temp: ${this.currentTemperature}°C, Target: ${this.targetTemperature}°C, Heating: ${this.currentHeatingState}`);
-      })
-      .catch((error) => {
-        this.log.error('Error updating device status:', error.message);
-        // Retry logic or additional error handling can be added here
-      });
+      axios
+        .get<DeviceStatusResponse>('https://api.app.sleep.me/v1/device/status', {
+          headers: { Authorization: `Bearer ${this.apiToken}` },
+        })
+        .then((response) => {
+          this.currentTemperature = response.data.temperature;
+          if (response.data.targetTemperature !== undefined) {
+            this.targetTemperature = response.data.targetTemperature;
+          }
+          if (response.data.isHeating !== undefined) {
+            this.currentHeatingState = response.data.isHeating ? 1 : 0;
+          }
+          this.log.debug(
+            `Device status updated: Current temp: ${this.currentTemperature}°C, Target: ${this.targetTemperature}°C, Heating: ${this.currentHeatingState}`,
+          );
+        })
+        .catch((error) => {
+          this.log.error('Error updating device status:', error.message);
+          // Retry logic or additional error handling can be added here
+        });
     });
   }
 
@@ -140,42 +143,43 @@ class SleepMeAccessory implements AccessoryPlugin {
   private getCurrentTemperature(callback: (error: Error | null, value?: number) => void): void {
     this.updateDeviceStatus(); // Refresh the status
 
-    const temp = this.unit === 'F' ? 
-      this.celsiusToFahrenheit(this.currentTemperature) : 
-      this.currentTemperature;
+    const temp = this.unit === 'F' ? this.celsiusToFahrenheit(this.currentTemperature) : this.currentTemperature;
 
     this.log.debug(`Getting current temperature: ${temp}°${this.unit}`);
     callback(null, this.currentTemperature); // HomeKit expects Celsius
   }
 
   private getTargetTemperature(callback: (error: Error | null, value?: number) => void): void {
-    const temp = this.unit === 'F' ? 
-      this.celsiusToFahrenheit(this.targetTemperature) : 
-      this.targetTemperature;
+    const temp = this.unit === 'F' ? this.celsiusToFahrenheit(this.targetTemperature) : this.targetTemperature;
 
     this.log.debug(`Getting target temperature: ${temp}°${this.unit}`);
     callback(null, this.targetTemperature); // HomeKit expects Celsius
   }
 
   private setTemperature(value: CharacteristicValue, callback: (error?: Error) => void): void {
-    let targetTemp = value as number;
+    const targetTemp = value as number;
     const displayTemp = this.unit === 'F' ? this.celsiusToFahrenheit(targetTemp) : targetTemp;
 
     this.rateLimitApiCall(() => {
-      axios.post('https://api.app.sleep.me/v1/device/setTemperature', {
-        temperature: targetTemp
-      }, {
-        headers: { Authorization: `Bearer ${this.apiToken}` }
-      })
-      .then(() => {
-        this.targetTemperature = targetTemp;
-        this.log(`Temperature set to ${displayTemp.toFixed(1)}°${this.unit}`);
-        callback(undefined);
-      })
-      .catch(error => {
-        this.log.error('Error setting temperature:', error.message);
-        callback(error);
-      });
+      axios
+        .post(
+          'https://api.app.sleep.me/v1/device/setTemperature',
+          {
+            temperature: targetTemp,
+          },
+          {
+            headers: { Authorization: `Bearer ${this.apiToken}` },
+          },
+        )
+        .then(() => {
+          this.targetTemperature = targetTemp;
+          this.log(`Temperature set to ${displayTemp.toFixed(1)}°${this.unit}`);
+          callback(undefined);
+        })
+        .catch((error) => {
+          this.log.error('Error setting temperature:', error.message);
+          callback(error);
+        });
     });
   }
 
@@ -197,8 +201,7 @@ class SleepMeAccessory implements AccessoryPlugin {
   }
 
   private getTemperatureDisplayUnits(callback: (error: Error | null, value?: number) => void): void {
-    const units = this.unit === 'F' ? Characteristic.TemperatureDisplayUnits.FAHRENHEIT : 
-                                     Characteristic.TemperatureDisplayUnits.CELSIUS;
+    const units = this.unit === 'F' ? Characteristic.TemperatureDisplayUnits.FAHRENHEIT : Characteristic.TemperatureDisplayUnits.CELSIUS;
     callback(null, units);
   }
 
