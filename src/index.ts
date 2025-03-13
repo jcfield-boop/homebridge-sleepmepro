@@ -25,9 +25,29 @@ interface Device {
 }
 
 interface DeviceStatusResponse {
-  temperature: number;
-  targetTemperature?: number;
-  isHeating?: boolean;
+  about: {
+    firmware_version: string;
+    ip_address: string;
+    lan_address: string;
+    mac_address: string;
+    model: string;
+    serial_number: string;
+  };
+  control: {
+    brightness_level: number;
+    display_temperature_unit: string;
+    set_temperature_c: number;
+    set_temperature_f: number;
+    thermal_control_status: string;
+    time_zone: string;
+  };
+  status: {
+    is_connected: boolean;
+    is_water_low: boolean;
+    water_level: number;
+    water_temperature_f: number;
+    water_temperature_c: number;
+  };
 }
 
 class SleepMeAccessory implements AccessoryPlugin {
@@ -192,16 +212,14 @@ class SleepMeAccessory implements AccessoryPlugin {
 
       this.logAxiosResponse('GET', url, response);
 
-      this.currentTemperature = response.data.temperature;
-      if (response.data.targetTemperature !== undefined) {
-        this.targetTemperature = response.data.targetTemperature;
-      }
-      this.currentHeatingState = response.data.isHeating ? 1 : 0;
+      this.currentTemperature = response.data.status.water_temperature_c;
+      this.targetTemperature = response.data.control.set_temperature_c;
+      this.currentHeatingState = response.data.control.thermal_control_status === 'heating' ? 1 : 0;
 
       this.log.debug(
         `Status updated: Temp: ${this.currentTemperature}°C, Target: ${this.targetTemperature}°C, Heating: ${this.currentHeatingState}`,
       );
-      // response is not returned as the method's return type is void
+      // response is not returned because the function's return type is void
     } catch (error: any) {
       if (axios.isAxiosError(error)) {
         const axiosError = error as AxiosError;
@@ -237,7 +255,7 @@ class SleepMeAccessory implements AccessoryPlugin {
       this.logAxiosRequest('PUT', url, headers, data);
 
       await this.rateLimitedApiCall(async () => {
-        const response = await axios.put(url, data, { headers });
+        const response = await axios.put(url, { set_temperature_c: targetTemp }, { headers });
 
         this.logAxiosResponse('PUT', url, response);
 
