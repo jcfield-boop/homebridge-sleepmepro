@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import axios, { AxiosError } from 'axios';
 import {
   API,
@@ -42,6 +41,8 @@ class SleepMeAccessory implements AccessoryPlugin {
   private deviceId?: string;
   private firmwareVersion?: string;
   private scheduleTimer: NodeJS.Timeout | null;
+  private requestCount: number;
+  private minuteStart: number;
 
   constructor(log: Logging, config: AccessoryConfig) {
     this.log = log;
@@ -65,8 +66,7 @@ class SleepMeAccessory implements AccessoryPlugin {
 
     this.service
       .getCharacteristic(Characteristic.TargetHeatingCoolingState)
-      .onGet(() => this.currentHeatingState)
-      .onSet(this.setTargetHeatingCoolingState.bind(this));
+      .onGet(() => this.currentHeatingState);
 
     this.service
       .getCharacteristic(Characteristic.TemperatureDisplayUnits)
@@ -76,11 +76,44 @@ class SleepMeAccessory implements AccessoryPlugin {
 
     this.fetchDeviceIdAndUpdateStatus();
 
-    this.scheduleTimer = setInterval(() => this.updateDeviceStatus(), 60000);
+    this.scheduleTimer = setInterval(() => {
+      try {
+        this.updateDeviceStatus();
+      } catch (error) {
+        this.log.error('Error during scheduled device update:', error);
+      }
+    }, 60000);
+
+    this.requestCount = 0;
+    this.minuteStart = Math.floor(Date.now() / 60000);
   }
 
   getServices(): Service[] {
     return [this.service];
+  }
+
+  private async rateLimitedApiCall<T>(apiCall: () => Promise<T>): Promise<T> {
+    const currentMinute = Math.floor(Date.now() / 60000);
+
+    if (currentMinute > this.minuteStart) {
+      // New minute, reset counters
+      this.minuteStart = currentMinute;
+      this.requestCount = 0;
+    }
+
+    if (this.requestCount >= 10) {
+      // Rate limit reached, wait until the next minute
+      const delay = (this.minuteStart + 1) * 60000 - Date.now();
+      this.log.debug(`Rate limit reached, waiting ${delay}ms`);
+      await new Promise<void>(resolve => setTimeout(resolve, delay));
+
+      // Reset counters after waiting
+      this.minuteStart++;
+      this.requestCount = 0;
+    }
+
+    this.requestCount++;
+    return apiCall();
   }
 
   private async fetchDeviceIdAndUpdateStatus(): Promise<void> {
@@ -127,25 +160,28 @@ class SleepMeAccessory implements AccessoryPlugin {
     }
 
     try {
-      const response = await axios.get<DeviceStatusResponse>(
-        `https://api.developer.sleep.me/v1/devices/${this.deviceId}/status`,
-        {
-          headers: {
-            Authorization: `Bearer ${this.apiToken}`,
-            'Content-Type': 'application/json',
+      await this.rateLimitedApiCall(async () => {
+        const response = await axios.get<DeviceStatusResponse>(
+          `https://api.developer.sleep.me/v1/devices/${this.deviceId}/status`,
+          {
+            headers: {
+              Authorization: `Bearer ${this.apiToken}`,
+              'Content-Type': 'application/json',
+            },
           },
-        },
-      );
+        );
 
-      this.currentTemperature = response.data.temperature;
-      if (response.data.targetTemperature !== undefined) {
-        this.targetTemperature = response.data.targetTemperature;
-      }
-      this.currentHeatingState = response.data.isHeating ? 1 : 0;
+        this.currentTemperature = response.data.temperature;
+        if (response.data.targetTemperature !== undefined) {
+          this.targetTemperature = response.data.targetTemperature;
+        }
+        this.currentHeatingState = response.data.isHeating ? 1 : 0;
 
-      this.log.debug(
-        `Status updated: Temp: ${this.currentTemperature}°C, Target: ${this.targetTemperature}°C, Heating: ${this.currentHeatingState}`,
-      );
+        this.log.debug(
+          `Status updated: Temp: ${this.currentTemperature}°C, Target: ${this.targetTemperature}°C, Heating: ${this.currentHeatingState}`,
+        );
+        return response;
+      });
     } catch (error: any) {
       if (axios.isAxiosError(error)) {
         const axiosError = error as AxiosError;
@@ -171,55 +207,24 @@ class SleepMeAccessory implements AccessoryPlugin {
     }
 
     try {
-      await axios.put(
-        `https://api.developer.sleep.me/v1/devices/${this.deviceId}/temperature`,
-        {
-          targetTemperature: targetTemp,
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${this.apiToken}`,
-            'Content-Type': 'application/json',
+      await this.rateLimitedApiCall(async () => {
+        await axios.put(
+          `https://api.developer.sleep.me/v1/devices/${this.deviceId}/temperature`,
+          {
+            targetTemperature: targetTemp,
           },
-        },
-      );
+          {
+            headers: {
+              Authorization: `Bearer ${this.apiToken}`,
+              'Content-Type': 'application/json',
+            },
+          },
+        );
 
-      this.targetTemperature = targetTemp;
-      this.log.info(`Temperature set to ${targetTemp}°C`);
+        this.targetTemperature = targetTemp;
+        this.log.info(`Temperature set to ${targetTemp}°C`);
+      });
     } catch (error: any) {
       if (axios.isAxiosError(error)) {
         const axiosError = error as AxiosError;
-        if (axiosError.response) {
-          this.log.error(`Error setting temperature: Status code ${axiosError.response.status}`);
-          this.log.error(`Error data: ${JSON.stringify(axiosError.response.data)}`);
-        } else if (axiosError.request) {
-          this.log.error('Error setting temperature: No response received');
-        } else {
-          this.log.error('Error setting temperature:', axiosError.message);
-        }
-      } else {
-        this.log.error('An unknown error occurred:', error);
-      }
-    }
-  }
-
-  private async setTargetHeatingCoolingState(value: CharacteristicValue): Promise<void> {
-    const state = value as number;
-    this.currentHeatingState = state;
-
-    this.log.info(`Set heating state to: ${state}`);
-
-    if (state === 0) {
-      this.log.info('Sending OFF command');
-    } else if (state === 1) {
-      this.log.info('Sending HEAT command');
-    }
-  }
-
-  shutdown(): void {
-    if (this.scheduleTimer) {
-      clearInterval(this.scheduleTimer);
-      this.scheduleTimer = null;
-    }
-  }
-}
+        if (axiosError.response)
