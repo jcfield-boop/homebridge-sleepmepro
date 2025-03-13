@@ -1,5 +1,6 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import axios, { AxiosError } from 'axios';
+import axios, { AxiosError, AxiosResponse } from 'axios';
 import {
   API,
   AccessoryPlugin,
@@ -81,7 +82,9 @@ class SleepMeAccessory implements AccessoryPlugin {
     this.service
       .getCharacteristic(Characteristic.TargetTemperature)
       .onGet(() => this.targetTemperature)
-      .onSet(this.setTemperature.bind(this));
+      .onSet(async (value: CharacteristicValue) => {
+        await this.setTemperature(value);
+      });
 
     this.service.getCharacteristic(Characteristic.CurrentHeatingCoolingState).onGet(() => this.currentHeatingState);
 
@@ -219,7 +222,6 @@ class SleepMeAccessory implements AccessoryPlugin {
       this.log.debug(
         `Status updated: Temp: ${this.currentTemperature}°C, Target: ${this.targetTemperature}°C, Heating: ${this.currentHeatingState}`,
       );
-      // response is not returned because the function's return type is void
     } catch (error: any) {
       if (axios.isAxiosError(error)) {
         const axiosError = error as AxiosError;
@@ -245,17 +247,17 @@ class SleepMeAccessory implements AccessoryPlugin {
     }
 
     try {
-      const url = `https://api.developer.sleep.me/v1/devices/${this.deviceId}/temperature`;
+      const url = `https://api.developer.sleep.me/v1/devices/${this.deviceId}/control`;
       const headers = {
         Authorization: `Bearer ${this.apiToken}`,
         'Content-Type': 'application/json',
       };
-      const data = { targetTemperature: targetTemp };
+      const data = { set_temperature_c: targetTemp, brightness_level: 100, thermal_control_status: 'heating' };
 
       this.logAxiosRequest('PUT', url, headers, data);
 
       await this.rateLimitedApiCall(async () => {
-        const response = await axios.put(url, { set_temperature_c: targetTemp }, { headers });
+        const response = await axios.put(url, data, { headers });
 
         this.logAxiosResponse('PUT', url, response);
 
