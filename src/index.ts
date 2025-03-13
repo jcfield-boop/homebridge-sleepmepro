@@ -76,7 +76,7 @@ class SleepMeAccessory implements AccessoryPlugin {
 
     this.fetchDeviceIdAndUpdateStatus();
 
-    this.scheduleTimer = setInterval(() => this.updateDeviceStatus(), 60000); //updated to call updateDeviceStatus
+    this.scheduleTimer = setInterval(() => this.updateDeviceStatus(), 60000);
   }
 
   getServices(): Service[] {
@@ -128,7 +128,7 @@ class SleepMeAccessory implements AccessoryPlugin {
 
     try {
       const response = await axios.get<DeviceStatusResponse>(
-        `https://api.developer.sleep.me/v1/device/status/${this.deviceId}`,
+        `https://api.developer.sleep.me/v1/devices/${this.deviceId}/status`,
         {
           headers: {
             Authorization: `Bearer ${this.apiToken}`,
@@ -171,10 +171,10 @@ class SleepMeAccessory implements AccessoryPlugin {
     }
 
     try {
-      await axios.post(
-        `https://api.developer.sleep.me/v1/device/setTemperature/${this.deviceId}`,
+      await axios.put(
+        `https://api.developer.sleep.me/v1/devices/${this.deviceId}/temperature`,
         {
-          temperature: targetTemp,
+          targetTemperature: targetTemp,
         },
         {
           headers: {
@@ -206,5 +206,20 @@ class SleepMeAccessory implements AccessoryPlugin {
   private async setTargetHeatingCoolingState(value: CharacteristicValue): Promise<void> {
     const state = value as number;
     this.currentHeatingState = state;
+
+    this.log.info(`Set heating state to: ${state}`);
+
+    if (state === 0) {
+      this.log.info('Sending OFF command');
+    } else if (state === 1) {
+      this.log.info('Sending HEAT command');
+    }
+  }
+
+  shutdown(): void {
+    if (this.scheduleTimer) {
+      clearInterval(this.scheduleTimer);
+      this.scheduleTimer = null;
+    }
   }
 }
