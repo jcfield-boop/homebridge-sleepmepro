@@ -1,4 +1,3 @@
- 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import axios, { AxiosError, AxiosResponse } from 'axios';
 import {
@@ -65,6 +64,7 @@ class SleepMeAccessory implements AccessoryPlugin {
   private scheduleTimer: NodeJS.Timeout | null;
   private requestCount: number;
   private minuteStart: number;
+  private temperatureSchedule: any[];
 
   constructor(log: Logging, config: AccessoryConfig) {
     this.log = log;
@@ -74,6 +74,7 @@ class SleepMeAccessory implements AccessoryPlugin {
     this.currentTemperature = 20;
     this.targetTemperature = 20;
     this.currentHeatingState = 0;
+    this.temperatureSchedule = config.temperatureSchedule || [];
 
     this.service = new HomebridgeService.Thermostat(this.name);
 
@@ -196,7 +197,6 @@ class SleepMeAccessory implements AccessoryPlugin {
       }
     }
   }
-
   private async updateDeviceStatus(): Promise<void> {
     if (!this.deviceId) {
       this.log.error('Device ID is missing.');
