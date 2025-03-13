@@ -126,18 +126,19 @@ class SleepMeAccessory implements AccessoryPlugin {
         },
       });
 
+      this.log.debug(`Devices API Response: ${JSON.stringify(response.data)}`); // Log the response
+
       if (!Array.isArray(response.data) || response.data.length === 0) {
         this.log.error('No devices found.');
         return;
       }
 
-      this.deviceId = response.data[0].id;
+      this.deviceId = response.data[0].id.trim(); // Trim and set device ID
       this.firmwareVersion = response.data[0].firmwareVersion || 'Unknown';
 
       this.log.info(`Using device ID: ${this.deviceId}, Firmware: ${this.firmwareVersion}`);
 
       await this.updateDeviceStatus();
-     
     } catch (error: any) {
       if (axios.isAxiosError(error)) {
         const axiosError = error as AxiosError;
@@ -208,6 +209,7 @@ class SleepMeAccessory implements AccessoryPlugin {
     }
 
     try {
+      this.log.debug(`Setting temperature for device ID: ${this.deviceId}, targetTemp: ${targetTemp}`); // Log before PUT
       await this.rateLimitedApiCall(async () => {
         await axios.put(
           `https://api.developer.sleep.me/v1/devices/${this.deviceId}/temperature`,
