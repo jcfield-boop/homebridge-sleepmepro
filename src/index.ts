@@ -51,6 +51,7 @@ interface DeviceStatusResponse {
 }
 
 class SleepMeAccessory implements AccessoryPlugin {
+  [x: string]: any;
   private readonly log: Logging;
   private readonly name: string;
   private readonly apiToken: string;
@@ -252,7 +253,7 @@ class SleepMeAccessory implements AccessoryPlugin {
       this.log.error('Cannot set temperature, device ID is missing.');
       return;
     }
-
+  
     try {
       const url = `https://api.developer.sleep.me/v1/devices/${this.deviceId}/control`;
       const headers = {
@@ -260,14 +261,14 @@ class SleepMeAccessory implements AccessoryPlugin {
         'Content-Type': 'application/json',
       };
       const data = { set_temperature_c: targetTemp, brightness_level: 100, thermal_control_status: 'heating' };
-
-      this.logAxiosRequest('PUT', url, headers, data);
-
+  
+      this.logAxiosRequest('PATCH', url, headers, data); // Changed to PATCH
+  
       await this.rateLimitedApiCall(async () => {
-        const response = await axios.put(url, data, { headers });
-
-        this.logAxiosResponse('PUT', url, response);
-
+        const response = await axios.patch(url, data, { headers }); // Changed to patch
+  
+        this.logAxiosResponse('PATCH', url, response); // Changed to PATCH
+  
         this.targetTemperature = targetTemp;
         this.log.info(`Temperature set to ${targetTemp}°C`);
       });
@@ -288,7 +289,43 @@ class SleepMeAccessory implements AccessoryPlugin {
     }
   }
 
-  private scheduleWarmUpEvents(): void {
-    // Implement the logic for scheduling warm-up events
+  private async warmUpDevice(temperature: number): Promise<void> {
+    if (!this.deviceId) {
+      this.log.error('Cannot warm up, device ID is missing.');
+      return;
+    }
+  
+    try {
+      const url = `https://api.developer.sleep.me/v1/devices/${this.deviceId}/control`;
+      const headers = {
+        Authorization: `Bearer ${this.apiToken}`,
+        'Content-Type': 'application/json',
+      };
+      const data = { set_temperature_c: temperature, brightness_level: 100, thermal_control_status: 'heating' };
+  
+      this.logAxiosRequest('PATCH', url, headers, data); // Changed to PATCH
+  
+      await this.rateLimitedApiCall(async () => {
+        const response = await axios.patch(url, data, { headers }); // Changed to patch
+  
+        this.logAxiosResponse('PATCH', url, response); // Changed to PATCH
+  
+        this.log.info(`Warmed up ${this.name} to ${temperature}°C`);
+      });
+    } catch (error: any) {
+      if (axios.isAxiosError(error)) {
+        const axiosError = error as AxiosError;
+        if (axiosError.response) {
+          this.log.error(`Error warming up device: Status code ${axiosError.response.status}`);
+          this.log.error(`Error data: ${JSON.stringify(axiosError.response.data)}`);
+        } else if (axiosError.request) {
+          this.log.error('Error warming up device: No response received');
+        } else {
+          this.log.error('Error warming up device:', axiosError.message);
+        }
+      } else {
+        this.log.error('An unknown error occurred:', error);
+      }
+    }
   }
 }
