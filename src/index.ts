@@ -68,6 +68,7 @@ class SleepMeAccessory implements AccessoryPlugin {
 
   constructor(log: Logging, config: AccessoryConfig) {
     this.log = log;
+    this.log.debug('SleepMeAccessory constructor called'); // Added log message
     this.name = config.name;
     this.apiToken = config.apiToken;
     this.unit = config.unit || 'C';
@@ -75,33 +76,33 @@ class SleepMeAccessory implements AccessoryPlugin {
     this.targetTemperature = 20;
     this.currentHeatingState = 0;
     this.temperatureSchedule = config.temperatureSchedule || [];
-
+  
     this.service = new HomebridgeService.Thermostat(this.name);
-
+  
     this.service.getCharacteristic(Characteristic.CurrentTemperature).onGet(() => this.currentTemperature);
-
+  
     this.service
       .getCharacteristic(Characteristic.TargetTemperature)
       .onGet(() => this.targetTemperature)
       .onSet(async (value: CharacteristicValue) => {
         await this.setTemperature(value);
       });
-
+  
     this.service.getCharacteristic(Characteristic.CurrentHeatingCoolingState).onGet(() => this.currentHeatingState);
-
+  
     this.service
       .getCharacteristic(Characteristic.TargetHeatingCoolingState)
       .onGet(() => this.currentHeatingState);
-
+  
     this.service
       .getCharacteristic(Characteristic.TemperatureDisplayUnits)
       .onGet(() => (this.unit === 'F' ? Characteristic.TemperatureDisplayUnits.FAHRENHEIT : Characteristic.TemperatureDisplayUnits.CELSIUS));
-
+  
     this.service.addCharacteristic(Characteristic.FirmwareRevision).onGet(() => this.firmwareVersion || 'Unknown');
-
+  
     this.fetchDeviceIdAndUpdateStatus();
     this.scheduleWarmUpEvents();
-
+  
     this.scheduleTimer = setInterval(() => {
       try {
         this.updateDeviceStatus();
@@ -109,7 +110,7 @@ class SleepMeAccessory implements AccessoryPlugin {
         this.log.error('Error during scheduled device update:', error);
       }
     }, 60000);
-
+  
     this.requestCount = 0;
     this.minuteStart = Math.floor(Date.now() / 60000);
   }
