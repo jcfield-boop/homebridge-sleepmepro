@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
+ 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import axios, { AxiosError, AxiosResponse } from 'axios';
 import {
@@ -124,7 +124,7 @@ class SleepMeAccessory implements AccessoryPlugin {
     }
   }
 
-  private logAxiosResponse(method: string, url: string, response: any): void {
+  private logAxiosResponse(method: string, url: string, response: AxiosResponse): void {
     this.log.debug(`[API Response] ${method} ${url}`);
     this.log.debug(`[API Status] ${response.status}`);
     this.log.debug(`[API Response Headers] ${JSON.stringify(response.headers)}`);
@@ -196,6 +196,7 @@ class SleepMeAccessory implements AccessoryPlugin {
       }
     }
   }
+
   private async updateDeviceStatus(): Promise<void> {
     if (!this.deviceId) {
       this.log.error('Device ID is missing.');
