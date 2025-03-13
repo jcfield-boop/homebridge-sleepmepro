@@ -100,6 +100,7 @@ class SleepMeAccessory implements AccessoryPlugin {
     this.service.addCharacteristic(Characteristic.FirmwareRevision).onGet(() => this.firmwareVersion || 'Unknown');
 
     this.fetchDeviceIdAndUpdateStatus();
+    this.scheduleWarmUpEvents();
 
     this.scheduleTimer = setInterval(() => {
       try {
@@ -275,6 +276,73 @@ class SleepMeAccessory implements AccessoryPlugin {
           this.log.error('Error setting temperature: No response received');
         } else {
           this.log.error('Error setting temperature:', axiosError.message);
+        }
+      } else {
+        this.log.error('An unknown error occurred:', error);
+      }
+    }
+  }
+
+  private scheduleWarmUpEvents(): void {
+    if (!this.temperatureSchedule || this.temperatureSchedule.length === 0) {
+      return;
+    }
+
+    this.temperatureSchedule.forEach((scheduleItem) => {
+      if (scheduleItem.warmAwakeSettings && scheduleItem.warmAwakeSettings.warmUpEnabled) {
+        const [hours, minutes] = scheduleItem.time.split(':').map(Number);
+        const now = new Date();
+        const scheduleTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours, minutes);
+        if (scheduleTime < now) {
+          scheduleTime.setDate(scheduleTime.getDate() + 1); // Schedule for tomorrow if time is in the past
+        }
+
+        const warmUpStartTime = new Date(scheduleTime.getTime() - scheduleItem.warmAwakeSettings.warmUpDuration * 60000);
+        const delay = warmUpStartTime.getTime() - now.getTime();
+
+        if (delay > 0) {
+          setTimeout(async () => {
+            this.log.info(`Starting warm-up for ${this.name} at ${warmUpStartTime.toLocaleTimeString()}`);
+            await this.warmUpDevice(scheduleItem.warmAwakeSettings.warmUpTemperature);
+          }, delay);
+        }
+      }
+    });
+  }
+
+  private async warmUpDevice(temperature: number): Promise<void> {
+    if (!this.deviceId) {
+      this.log.error('Cannot warm up, device ID is missing.');
+      return;
+    }
+
+    try {
+      const url = `https://api.developer.sleep.me/v1/devices/${this.deviceId}/control`;
+      const headers = {
+        Authorization: `Bearer ${this.apiToken}`,
+        'Content-Type': 'application/json',
+      };
+      const data = { set_temperature_c: temperature, brightness_level: 100, thermal_control_status: 'heating' };
+
+      this.logAxiosRequest('PUT', url, headers, data);
+
+      await this.rateLimitedApiCall(async () => {
+        const response = await axios.put(url, data, { headers });
+
+        this.logAxiosResponse('PUT', url, response);
+
+        this.log.info(`Warmed up ${this.name} to ${temperature}°C`);
+      });
+    } catch (error: any) {
+      if (axios.isAxiosError(error)) {
+        const axiosError = error as AxiosError;
+        if (axiosError.response) {
+          this.log.error(`Error warming up device: Status code ${axiosError.response.status}`);
+          this.log.error(`Error data: ${JSON.stringify(axiosError.response.data)}`);
+        } else if (axiosError.request) {
+          this.log.error('Error warming up device: No response received');
+        } else {
+          this.log.error('Error warming up device:', axiosError.message);
         }
       } else {
         this.log.error('An unknown error occurred:', error);
