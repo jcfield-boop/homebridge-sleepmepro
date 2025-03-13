@@ -124,10 +124,8 @@ class SleepMeAccessory implements AccessoryPlugin {
   }
 
   private logAxiosResponse(method: string, url: string, response: AxiosResponse): void {
-    if (response.status >= 400) { // Log only errors (4xx and 5xx status codes)
-      this.log.error(`[API Error] ${method} ${url} - Status: ${response.status}`);
-      this.log.error(`[API Error Headers] ${JSON.stringify(response.headers)}`);
-      this.log.error(`[API Error Data] ${JSON.stringify(response.data)}`);
+    if (response.status >= 400) {
+      this.log.error(`[API Error] ${method} - Status: ${response.status}`);
     }
   }
 
