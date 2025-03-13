@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import axios, { AxiosError } from 'axios';
 import {
   API,
@@ -136,6 +137,7 @@ class SleepMeAccessory implements AccessoryPlugin {
       this.log.info(`Using device ID: ${this.deviceId}, Firmware: ${this.firmwareVersion}`);
 
       await this.updateDeviceStatus();
+     
     } catch (error: any) {
       if (axios.isAxiosError(error)) {
         const axiosError = error as AxiosError;
@@ -152,7 +154,6 @@ class SleepMeAccessory implements AccessoryPlugin {
       }
     }
   }
-
   private async updateDeviceStatus(): Promise<void> {
     if (!this.deviceId) {
       this.log.error('Device ID is missing.');
@@ -227,4 +228,17 @@ class SleepMeAccessory implements AccessoryPlugin {
     } catch (error: any) {
       if (axios.isAxiosError(error)) {
         const axiosError = error as AxiosError;
-        if (axiosError.response)
+        if (axiosError.response) {
+          this.log.error(`Error setting temperature: Status code ${axiosError.response.status}`);
+          this.log.error(`Error data: ${JSON.stringify(axiosError.response.data)}`);
+        } else if (axiosError.request) {
+          this.log.error('Error setting temperature: No response received');
+        } else {
+          this.log.error('Error setting temperature:', axiosError.message);
+        }
+      } else {
+        this.log.error('An unknown error occurred:', error);
+      }
+    }
+  }
+}
