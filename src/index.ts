@@ -93,6 +93,21 @@ class SleepMeAccessory implements AccessoryPlugin {
     return [this.service];
   }
 
+  private logAxiosRequest(method: string, url: string, headers: any, data?: any): void {
+    this.log.debug(`[API Request] ${method} ${url}`);
+    this.log.debug(`[API Headers] ${JSON.stringify(headers)}`);
+    if (data) {
+      this.log.debug(`[API Data] ${JSON.stringify(data)}`);
+    }
+  }
+
+  private logAxiosResponse(method: string, url: string, response: any): void {
+    this.log.debug(`[API Response] ${method} ${url}`);
+    this.log.debug(`[API Status] ${response.status}`);
+    this.log.debug(`[API Response Headers] ${JSON.stringify(response.headers)}`);
+    this.log.debug(`[API Response Data] ${JSON.stringify(response.data)}`);
+  }
+
   private async rateLimitedApiCall<T>(apiCall: () => Promise<T>): Promise<T> {
     const currentMinute = Math.floor(Date.now() / 60000);
 
@@ -119,21 +134,24 @@ class SleepMeAccessory implements AccessoryPlugin {
 
   private async fetchDeviceIdAndUpdateStatus(): Promise<void> {
     try {
-      const response = await axios.get<Device[]>('https://api.developer.sleep.me/v1/devices', {
-        headers: {
-          Authorization: `Bearer ${this.apiToken}`,
-          'Content-Type': 'application/json',
-        },
-      });
+      const url = 'https://api.developer.sleep.me/v1/devices';
+      const headers = {
+        Authorization: `Bearer ${this.apiToken}`,
+        'Content-Type': 'application/json',
+      };
 
-      this.log.debug(`Devices API Response: ${JSON.stringify(response.data)}`); // Log the response
+      this.logAxiosRequest('GET', url, headers);
+
+      const response = await axios.get<Device[]>(url, { headers });
+
+      this.logAxiosResponse('GET', url, response);
 
       if (!Array.isArray(response.data) || response.data.length === 0) {
         this.log.error('No devices found.');
         return;
       }
 
-      this.deviceId = response.data[0].id.trim(); // Trim and set device ID
+      this.deviceId = response.data[0].id.trim();
       this.firmwareVersion = response.data[0].firmwareVersion || 'Unknown';
 
       this.log.info(`Using device ID: ${this.deviceId}, Firmware: ${this.firmwareVersion}`);
@@ -162,28 +180,28 @@ class SleepMeAccessory implements AccessoryPlugin {
     }
 
     try {
-      await this.rateLimitedApiCall(async () => {
-        const response = await axios.get<DeviceStatusResponse>(
-          `https://api.developer.sleep.me/v1/devices/${this.deviceId}/status`,
-          {
-            headers: {
-              Authorization: `Bearer ${this.apiToken}`,
-              'Content-Type': 'application/json',
-            },
-          },
-        );
+      const url = `https://api.developer.sleep.me/v1/devices/${this.deviceId}/status`;
+      const headers = {
+        Authorization: `Bearer ${this.apiToken}`,
+        'Content-Type': 'application/json',
+      };
 
-        this.currentTemperature = response.data.temperature;
-        if (response.data.targetTemperature !== undefined) {
-          this.targetTemperature = response.data.targetTemperature;
-        }
-        this.currentHeatingState = response.data.isHeating ? 1 : 0;
+      this.logAxiosRequest('GET', url, headers);
 
-        this.log.debug(
-          `Status updated: Temp: ${this.currentTemperature}°C, Target: ${this.targetTemperature}°C, Heating: ${this.currentHeatingState}`,
-        );
-        return response;
-      });
+      const response = await axios.get<DeviceStatusResponse>(url, { headers });
+
+      this.logAxiosResponse('GET', url, response);
+
+      this.currentTemperature = response.data.temperature;
+      if (response.data.targetTemperature !== undefined) {
+        this.targetTemperature = response.data.targetTemperature;
+      }
+      this.currentHeatingState = response.data.isHeating ? 1 : 0;
+
+      this.log.debug(
+        `Status updated: Temp: ${this.currentTemperature}°C, Target: ${this.targetTemperature}°C, Heating: ${this.currentHeatingState}`,
+      );
+      // response is not returned as the method's return type is void
     } catch (error: any) {
       if (axios.isAxiosError(error)) {
         const axiosError = error as AxiosError;
@@ -209,20 +227,19 @@ class SleepMeAccessory implements AccessoryPlugin {
     }
 
     try {
-      this.log.debug(`Setting temperature for device ID: ${this.deviceId}, targetTemp: ${targetTemp}`); // Log before PUT
+      const url = `https://api.developer.sleep.me/v1/devices/${this.deviceId}/temperature`;
+      const headers = {
+        Authorization: `Bearer ${this.apiToken}`,
+        'Content-Type': 'application/json',
+      };
+      const data = { targetTemperature: targetTemp };
+
+      this.logAxiosRequest('PUT', url, headers, data);
+
       await this.rateLimitedApiCall(async () => {
-        await axios.put(
-          `https://api.developer.sleep.me/v1/devices/${this.deviceId}/temperature`,
-          {
-            targetTemperature: targetTemp,
-          },
-          {
-            headers: {
-              Authorization: `Bearer ${this.apiToken}`,
-              'Content-Type': 'application/json',
-            },
-          },
-        );
+        const response = await axios.put(url, data, { headers });
+
+        this.logAxiosResponse('PUT', url, response);
 
         this.targetTemperature = targetTemp;
         this.log.info(`Temperature set to ${targetTemp}°C`);
