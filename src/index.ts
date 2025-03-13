@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios, { AxiosError } from 'axios';
 import {
   API,
   AccessoryPlugin,
@@ -97,7 +97,19 @@ class SleepMeAccessory implements AccessoryPlugin {
 
       await this.updateDeviceStatus();
     } catch (error: unknown) {
-      this.log.error('Error fetching devices:', (error as Error).message);
+      if (axios.isAxiosError(error)) {
+        const axiosError = error as AxiosError;
+        if (axiosError.response) {
+          this.log.error(`Error fetching devices: Status code ${axiosError.response.status}`);
+          this.log.error(`Error data: ${JSON.stringify(axiosError.response.data)}`);
+        } else if (axiosError.request) {
+          this.log.error('Error fetching devices: No response received');
+        } else {
+          this.log.error('Error fetching devices:', axiosError.message);
+        }
+      } else {
+        this.log.error('An unknown error occurred:', error);
+      }
     }
   }
 
@@ -122,7 +134,19 @@ class SleepMeAccessory implements AccessoryPlugin {
         `Status updated: Temp: ${this.currentTemperature}°C, Target: ${this.targetTemperature}°C, Heating: ${this.currentHeatingState}`,
       );
     } catch (error: unknown) {
-      this.log.error('Error updating device status:', (error as Error).message);
+      if (axios.isAxiosError(error)) {
+        const axiosError = error as AxiosError;
+        if (axiosError.response) {
+          this.log.error(`Error updating device status: Status code ${axiosError.response.status}`);
+          this.log.error(`Error data: ${JSON.stringify(axiosError.response.data)}`);
+        } else if (axiosError.request) {
+          this.log.error('Error updating device status: No response received');
+        } else {
+          this.log.error('Error updating device status:', axiosError.message);
+        }
+      } else {
+        this.log.error('An unknown error occurred:', error);
+      }
     }
   }
 
@@ -143,7 +167,19 @@ class SleepMeAccessory implements AccessoryPlugin {
       this.targetTemperature = targetTemp;
       this.log.info(`Temperature set to ${targetTemp}°C`);
     } catch (error: unknown) {
-      this.log.error('Error setting temperature:', (error as Error).message);
+      if (axios.isAxiosError(error)) {
+        const axiosError = error as AxiosError;
+        if (axiosError.response) {
+          this.log.error(`Error setting temperature: Status code ${axiosError.response.status}`);
+          this.log.error(`Error data: ${JSON.stringify(axiosError.response.data)}`);
+        } else if (axiosError.request) {
+          this.log.error('Error setting temperature: No response received');
+        } else {
+          this.log.error('Error setting temperature:', axiosError.message);
+        }
+      } else {
+        this.log.error('An unknown error occurred:', error);
+      }
     }
   }
 
