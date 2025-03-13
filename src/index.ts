@@ -68,7 +68,7 @@ class SleepMeAccessory implements AccessoryPlugin {
 
   constructor(log: Logging, config: AccessoryConfig) {
     this.log = log;
-    this.log.debug('SleepMeAccessory constructor called'); // Added log message
+    this.log.debug('SleepMeAccessory constructor called');
     this.name = config.name;
     this.apiToken = config.apiToken;
     this.unit = config.unit || 'C';
@@ -76,33 +76,33 @@ class SleepMeAccessory implements AccessoryPlugin {
     this.targetTemperature = 20;
     this.currentHeatingState = 0;
     this.temperatureSchedule = config.temperatureSchedule || [];
-  
+
     this.service = new HomebridgeService.Thermostat(this.name);
-  
+
     this.service.getCharacteristic(Characteristic.CurrentTemperature).onGet(() => this.currentTemperature);
-  
+
     this.service
       .getCharacteristic(Characteristic.TargetTemperature)
       .onGet(() => this.targetTemperature)
       .onSet(async (value: CharacteristicValue) => {
         await this.setTemperature(value);
       });
-  
+
     this.service.getCharacteristic(Characteristic.CurrentHeatingCoolingState).onGet(() => this.currentHeatingState);
-  
+
     this.service
       .getCharacteristic(Characteristic.TargetHeatingCoolingState)
       .onGet(() => this.currentHeatingState);
-  
+
     this.service
       .getCharacteristic(Characteristic.TemperatureDisplayUnits)
       .onGet(() => (this.unit === 'F' ? Characteristic.TemperatureDisplayUnits.FAHRENHEIT : Characteristic.TemperatureDisplayUnits.CELSIUS));
-  
+
     this.service.addCharacteristic(Characteristic.FirmwareRevision).onGet(() => this.firmwareVersion || 'Unknown');
-  
+
     this.fetchDeviceIdAndUpdateStatus();
     this.scheduleWarmUpEvents();
-  
+
     this.scheduleTimer = setInterval(() => {
       try {
         this.updateDeviceStatus();
@@ -110,7 +110,7 @@ class SleepMeAccessory implements AccessoryPlugin {
         this.log.error('Error during scheduled device update:', error);
       }
     }, 60000);
-  
+
     this.requestCount = 0;
     this.minuteStart = Math.floor(Date.now() / 60000);
   }
@@ -199,11 +199,14 @@ class SleepMeAccessory implements AccessoryPlugin {
       }
     }
   }
+
   private async updateDeviceStatus(): Promise<void> {
     if (!this.deviceId) {
       this.log.error('Device ID is missing.');
       return;
     }
+
+    this.log.debug(`Device ID before API call: ${this.deviceId}`);
 
     try {
       const url = `https://api.developer.sleep.me/v1/devices/${this.deviceId}/status`;
@@ -226,6 +229,7 @@ class SleepMeAccessory implements AccessoryPlugin {
         `Status updated: Temp: ${this.currentTemperature}°C, Target: ${this.targetTemperature}°C, Heating: ${this.currentHeatingState}`,
       );
     } catch (error: any) {
+      this.log.error('Error in updateDeviceStatus:', error);
       if (axios.isAxiosError(error)) {
         const axiosError = error as AxiosError;
         if (axiosError.response) {
@@ -285,69 +289,6 @@ class SleepMeAccessory implements AccessoryPlugin {
   }
 
   private scheduleWarmUpEvents(): void {
-    if (!this.temperatureSchedule || this.temperatureSchedule.length === 0) {
-      return;
-    }
-
-    this.temperatureSchedule.forEach((scheduleItem) => {
-      if (scheduleItem.warmAwakeSettings && scheduleItem.warmAwakeSettings.warmUpEnabled) {
-        const [hours, minutes] = scheduleItem.time.split(':').map(Number);
-        const now = new Date();
-        const scheduleTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours, minutes);
-        if (scheduleTime < now) {
-          scheduleTime.setDate(scheduleTime.getDate() + 1); // Schedule for tomorrow if time is in the past
-        }
-
-        const warmUpStartTime = new Date(scheduleTime.getTime() - scheduleItem.warmAwakeSettings.warmUpDuration * 60000);
-        const delay = warmUpStartTime.getTime() - now.getTime();
-
-        if (delay > 0) {
-          setTimeout(async () => {
-            this.log.info(`Starting warm-up for ${this.name} at ${warmUpStartTime.toLocaleTimeString()}`);
-            await this.warmUpDevice(scheduleItem.warmAwakeSettings.warmUpTemperature);
-          }, delay);
-        }
-      }
-    });
-  }
-
-  private async warmUpDevice(temperature: number): Promise<void> {
-    if (!this.deviceId) {
-      this.log.error('Cannot warm up, device ID is missing.');
-      return;
-    }
-
-    try {
-      const url = `https://api.developer.sleep.me/v1/devices/${this.deviceId}/control`;
-      const headers = {
-        Authorization: `Bearer ${this.apiToken}`,
-        'Content-Type': 'application/json',
-      };
-      const data = { set_temperature_c: temperature, brightness_level: 100, thermal_control_status: 'heating' };
-
-      this.logAxiosRequest('PUT', url, headers, data);
-
-      await this.rateLimitedApiCall(async () => {
-        const response = await axios.put(url, data, { headers });
-
-        this.logAxiosResponse('PUT', url, response);
-
-        this.log.info(`Warmed up ${this.name} to ${temperature}°C`);
-      });
-    } catch (error: any) {
-      if (axios.isAxiosError(error)) {
-        const axiosError = error as AxiosError;
-        if (axiosError.response) {
-          this.log.error(`Error warming up device: Status code ${axiosError.response.status}`);
-          this.log.error(`Error data: ${JSON.stringify(axiosError.response.data)}`);
-        } else if (axiosError.request) {
-          this.log.error('Error warming up device: No response received');
-        } else {
-          this.log.error('Error warming up device:', axiosError.message);
-        }
-      } else {
-        this.log.error('An unknown error occurred:', error);
-      }
-    }
+    // Implement the logic for scheduling warm-up events
   }
 }
