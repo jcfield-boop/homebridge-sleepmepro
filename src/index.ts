@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import axios, { AxiosError } from 'axios';
 import {
   API,
@@ -53,36 +54,42 @@ class SleepMeAccessory implements AccessoryPlugin {
 
     this.service = new HomebridgeService.Thermostat(this.name);
 
-    this.service.getCharacteristic(Characteristic.CurrentTemperature)
-      .onGet(() => this.currentTemperature);
+    this.service.getCharacteristic(Characteristic.CurrentTemperature).onGet(() => this.currentTemperature);
 
-    this.service.getCharacteristic(Characteristic.TargetTemperature)
+    this.service
+      .getCharacteristic(Characteristic.TargetTemperature)
       .onGet(() => this.targetTemperature)
       .onSet(this.setTemperature.bind(this));
 
-    this.service.getCharacteristic(Characteristic.CurrentHeatingCoolingState)
-      .onGet(() => this.currentHeatingState);
+    this.service.getCharacteristic(Characteristic.CurrentHeatingCoolingState).onGet(() => this.currentHeatingState);
 
-    this.service.getCharacteristic(Characteristic.TargetHeatingCoolingState)
+    this.service
+      .getCharacteristic(Characteristic.TargetHeatingCoolingState)
       .onGet(() => this.currentHeatingState)
       .onSet(this.setTargetHeatingCoolingState.bind(this));
 
-    this.service.getCharacteristic(Characteristic.TemperatureDisplayUnits)
-      .onGet(() => (this.unit === 'F' ? Characteristic.TemperatureDisplayUnits.FAHRENHEIT : Characteristic.TemperatureDisplayUnits.CELSIUS))
-      .onSet(this.setTemperatureDisplayUnits.bind(this));
+    this.service
+      .getCharacteristic(Characteristic.TemperatureDisplayUnits)
+      .onGet(() => (this.unit === 'F' ? Characteristic.TemperatureDisplayUnits.FAHRENHEIT : Characteristic.TemperatureDisplayUnits.CELSIUS));
 
-    this.service.addCharacteristic(Characteristic.FirmwareRevision)
-      .onGet(() => this.firmwareVersion || 'Unknown');
+    this.service.addCharacteristic(Characteristic.FirmwareRevision).onGet(() => this.firmwareVersion || 'Unknown');
 
     this.fetchDeviceIdAndUpdateStatus();
 
-    this.scheduleTimer = setInterval(() => this.checkSchedule(), 60000);
+    this.scheduleTimer = setInterval(() => this.updateDeviceStatus(), 60000); //updated to call updateDeviceStatus
+  }
+
+  getServices(): Service[] {
+    return [this.service];
   }
 
   private async fetchDeviceIdAndUpdateStatus(): Promise<void> {
     try {
-      const response = await axios.get<Device[]>('https://api.app.sleep.me/v1/devices', {
-        headers: { Authorization: `Bearer ${this.apiToken}` },
+      const response = await axios.get<Device[]>('https://api.developer.sleep.me/v1/devices', {
+        headers: {
+          Authorization: `Bearer ${this.apiToken}`,
+          'Content-Type': 'application/json',
+        },
       });
 
       if (!Array.isArray(response.data) || response.data.length === 0) {
@@ -96,7 +103,7 @@ class SleepMeAccessory implements AccessoryPlugin {
       this.log.info(`Using device ID: ${this.deviceId}, Firmware: ${this.firmwareVersion}`);
 
       await this.updateDeviceStatus();
-    } catch (error: unknown) {
+    } catch (error: any) {
       if (axios.isAxiosError(error)) {
         const axiosError = error as AxiosError;
         if (axiosError.response) {
@@ -120,9 +127,15 @@ class SleepMeAccessory implements AccessoryPlugin {
     }
 
     try {
-      const response = await axios.get<DeviceStatusResponse>(`https://api.app.sleep.me/v1/device/status/${this.deviceId}`, {
-        headers: { Authorization: `Bearer ${this.apiToken}` },
-      });
+      const response = await axios.get<DeviceStatusResponse>(
+        `https://api.developer.sleep.me/v1/device/status/${this.deviceId}`,
+        {
+          headers: {
+            Authorization: `Bearer ${this.apiToken}`,
+            'Content-Type': 'application/json',
+          },
+        },
+      );
 
       this.currentTemperature = response.data.temperature;
       if (response.data.targetTemperature !== undefined) {
@@ -133,7 +146,7 @@ class SleepMeAccessory implements AccessoryPlugin {
       this.log.debug(
         `Status updated: Temp: ${this.currentTemperature}°C, Target: ${this.targetTemperature}°C, Heating: ${this.currentHeatingState}`,
       );
-    } catch (error: unknown) {
+    } catch (error: any) {
       if (axios.isAxiosError(error)) {
         const axiosError = error as AxiosError;
         if (axiosError.response) {
@@ -158,15 +171,22 @@ class SleepMeAccessory implements AccessoryPlugin {
     }
 
     try {
-      await axios.post(`https://api.app.sleep.me/v1/device/setTemperature/${this.deviceId}`, {
-        temperature: targetTemp,
-      }, {
-        headers: { Authorization: `Bearer ${this.apiToken}` },
-      });
+      await axios.post(
+        `https://api.developer.sleep.me/v1/device/setTemperature/${this.deviceId}`,
+        {
+          temperature: targetTemp,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${this.apiToken}`,
+            'Content-Type': 'application/json',
+          },
+        },
+      );
 
       this.targetTemperature = targetTemp;
       this.log.info(`Temperature set to ${targetTemp}°C`);
-    } catch (error: unknown) {
+    } catch (error: any) {
       if (axios.isAxiosError(error)) {
         const axiosError = error as AxiosError;
         if (axiosError.response) {
@@ -186,33 +206,5 @@ class SleepMeAccessory implements AccessoryPlugin {
   private async setTargetHeatingCoolingState(value: CharacteristicValue): Promise<void> {
     const state = value as number;
     this.currentHeatingState = state;
-
-    this.log.info(`Set heating state to: ${state}`);
-
-    if (state === 0) {
-      this.log.info('Sending OFF command');
-    } else if (state === 1) {
-      this.log.info('Sending HEAT command');
-    }
-  }
-
-  private setTemperatureDisplayUnits(value: CharacteristicValue): void {
-    this.unit = value === Characteristic.TemperatureDisplayUnits.FAHRENHEIT ? 'F' : 'C';
-    this.log.info(`Display units set to: ${this.unit}`);
-  }
-
-  private checkSchedule(): void {
-    // Schedule check logic here
-  }
-
-  getServices(): Service[] {
-    return [this.service];
-  }
-
-  shutdown(): void {
-    if (this.scheduleTimer) {
-      clearInterval(this.scheduleTimer);
-      this.scheduleTimer = null;
-    }
   }
 }
