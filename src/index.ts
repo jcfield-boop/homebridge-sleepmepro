@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import axios, { AxiosError, AxiosResponse } from 'axios';
 import {
@@ -16,7 +17,7 @@ let Characteristic: typeof HomebridgeCharacteristic;
 export default (homebridge: API): void => {
   HomebridgeService = homebridge.hap.Service;
   Characteristic = homebridge.hap.Characteristic;
-  homebridge.registerAccessory('homebridge-sleepmepro', 'SleepMeAccessory', SleepMeAccessory);
+  homebridge.registerAccessory('homebridge-sleepmepro', 'sleepmepro', SleepMeAccessory);
 };
 
 interface Device {
@@ -51,7 +52,6 @@ interface DeviceStatusResponse {
 }
 
 class SleepMeAccessory implements AccessoryPlugin {
-  [x: string]: any;
   private readonly log: Logging;
   private readonly name: string;
   private readonly apiToken: string;
@@ -119,20 +119,16 @@ class SleepMeAccessory implements AccessoryPlugin {
   getServices(): Service[] {
     return [this.service];
   }
-
   private logAxiosRequest(method: string, url: string, headers: any, data?: any): void {
-    this.log.debug(`[API Request] ${method} ${url}`);
-    this.log.debug(`[API Headers] ${JSON.stringify(headers)}`);
-    if (data) {
-      this.log.debug(`[API Data] ${JSON.stringify(data)}`);
-    }
+    // No logging for successful requests
   }
 
   private logAxiosResponse(method: string, url: string, response: AxiosResponse): void {
-    this.log.debug(`[API Response] ${method} ${url}`);
-    this.log.debug(`[API Status] ${response.status}`);
-    this.log.debug(`[API Response Headers] ${JSON.stringify(response.headers)}`);
-    this.log.debug(`[API Response Data] ${JSON.stringify(response.data)}`);
+    if (response.status >= 400) { // Log only errors (4xx and 5xx status codes)
+      this.log.error(`[API Error] ${method} ${url} - Status: ${response.status}`);
+      this.log.error(`[API Error Headers] ${JSON.stringify(response.headers)}`);
+      this.log.error(`[API Error Data] ${JSON.stringify(response.data)}`);
+    }
   }
 
   private async rateLimitedApiCall<T>(apiCall: () => Promise<T>): Promise<T> {
@@ -167,11 +163,11 @@ class SleepMeAccessory implements AccessoryPlugin {
         'Content-Type': 'application/json',
       };
 
-      this.logAxiosRequest('GET', url, headers);
+      // No logging for successful requests
 
       const response = await axios.get<Device[]>(url, { headers });
 
-      this.logAxiosResponse('GET', url, response);
+      this.logAxiosResponse('GET', url, response); // Log only errors
 
       if (!Array.isArray(response.data) || response.data.length === 0) {
         this.log.error('No devices found.');
@@ -188,26 +184,24 @@ class SleepMeAccessory implements AccessoryPlugin {
       if (axios.isAxiosError(error)) {
         const axiosError = error as AxiosError;
         if (axiosError.response) {
-          this.log.error(`Error fetching devices: Status code ${axiosError.response.status}`);
-          this.log.error(`Error data: ${JSON.stringify(axiosError.response.data)}`);
+          this.log.error(`[API Error] GET ${URL} - Status: ${axiosError.response.status}`);
+          this.log.error(`[API Error Headers] ${JSON.stringify(axiosError.response.headers)}`);
+          this.log.error(`[API Error Data] ${JSON.stringify(axiosError.response.data)}`);
         } else if (axiosError.request) {
-          this.log.error('Error fetching devices: No response received');
+          this.log.error(`[API Error] GET ${URL} - No response received`);
         } else {
-          this.log.error('Error fetching devices:', axiosError.message);
+          this.log.error(`[API Error] GET ${URL} - ${axiosError.message}`);
         }
       } else {
-        this.log.error('An unknown error occurred:', error);
+        this.log.error(`[API Error] GET ${URL} - An unknown error occurred: ${error}`);
       }
     }
-  }
-
+  } 
   private async updateDeviceStatus(): Promise<void> {
     if (!this.deviceId) {
       this.log.error('Device ID is missing.');
       return;
     }
-
-    this.log.debug(`Device ID before API call: ${this.deviceId}`);
 
     try {
       const url = `https://api.developer.sleep.me/v1/devices/${this.deviceId}/status`;
@@ -216,33 +210,32 @@ class SleepMeAccessory implements AccessoryPlugin {
         'Content-Type': 'application/json',
       };
 
-      this.logAxiosRequest('GET', url, headers);
+      // No logging for successful requests
 
       const response = await axios.get<DeviceStatusResponse>(url, { headers });
 
-      this.logAxiosResponse('GET', url, response);
+      this.logAxiosResponse('GET', url, response); // Log only errors
 
       this.currentTemperature = response.data.status.water_temperature_c;
       this.targetTemperature = response.data.control.set_temperature_c;
       this.currentHeatingState = response.data.control.thermal_control_status === 'heating' ? 1 : 0;
 
-      this.log.debug(
-        `Status updated: Temp: ${this.currentTemperature}°C, Target: ${this.targetTemperature}°C, Heating: ${this.currentHeatingState}`,
-      );
+      // No logging for successful status updates
+
     } catch (error: any) {
-      this.log.error('Error in updateDeviceStatus:', error);
       if (axios.isAxiosError(error)) {
         const axiosError = error as AxiosError;
         if (axiosError.response) {
-          this.log.error(`Error updating device status: Status code ${axiosError.response.status}`);
-          this.log.error(`Error data: ${JSON.stringify(axiosError.response.data)}`);
+          this.log.error(`[API Error] GET ${URL} - Status: ${axiosError.response.status}`);
+          this.log.error(`[API Error Headers] ${JSON.stringify(axiosError.response.headers)}`);
+          this.log.error(`[API Error Data] ${JSON.stringify(axiosError.response.data)}`);
         } else if (axiosError.request) {
-          this.log.error('Error updating device status: No response received');
+          this.log.error(`[API Error] GET ${URL} - No response received`);
         } else {
-          this.log.error('Error updating device status:', axiosError.message);
+          this.log.error(`[API Error] GET ${URL} - ${axiosError.message}`);
         }
       } else {
-        this.log.error('An unknown error occurred:', error);
+        this.log.error(`[API Error] GET ${URL} - An unknown error occurred: ${error}`);
       }
     }
   }
@@ -253,7 +246,7 @@ class SleepMeAccessory implements AccessoryPlugin {
       this.log.error('Cannot set temperature, device ID is missing.');
       return;
     }
-  
+
     try {
       const url = `https://api.developer.sleep.me/v1/devices/${this.deviceId}/control`;
       const headers = {
@@ -261,14 +254,14 @@ class SleepMeAccessory implements AccessoryPlugin {
         'Content-Type': 'application/json',
       };
       const data = { set_temperature_c: targetTemp, brightness_level: 100, thermal_control_status: 'heating' };
-  
+
       this.logAxiosRequest('PATCH', url, headers, data); // Changed to PATCH
-  
+
       await this.rateLimitedApiCall(async () => {
         const response = await axios.patch(url, data, { headers }); // Changed to patch
-  
+
         this.logAxiosResponse('PATCH', url, response); // Changed to PATCH
-  
+
         this.targetTemperature = targetTemp;
         this.log.info(`Temperature set to ${targetTemp}°C`);
       });
@@ -276,17 +269,45 @@ class SleepMeAccessory implements AccessoryPlugin {
       if (axios.isAxiosError(error)) {
         const axiosError = error as AxiosError;
         if (axiosError.response) {
-          this.log.error(`Error setting temperature: Status code ${axiosError.response.status}`);
-          this.log.error(`Error data: ${JSON.stringify(axiosError.response.data)}`);
+          this.log.error(`[API Error] PATCH ${URL} - Status: ${axiosError.response.status}`);
+          this.log.error(`[API Error Headers] ${JSON.stringify(axiosError.response.headers)}`);
+          this.log.error(`[API Error Data] ${JSON.stringify(axiosError.response.data)}`);
         } else if (axiosError.request) {
-          this.log.error('Error setting temperature: No response received');
+          this.log.error(`[API Error] PATCH ${URL} - No response received`);
         } else {
-          this.log.error('Error setting temperature:', axiosError.message);
+          this.log.error(`[API Error] PATCH ${URL} - ${axiosError.message}`);
         }
       } else {
-        this.log.error('An unknown error occurred:', error);
+        this.log.error(`[API Error] PATCH ${URL} - An unknown error occurred: ${error}`);
       }
     }
+  }
+
+  private scheduleWarmUpEvents(): void {
+    if (!this.temperatureSchedule || this.temperatureSchedule.length === 0) {
+      return;
+    }
+
+    this.temperatureSchedule.forEach((scheduleItem) => {
+      if (scheduleItem.warmAwakeSettings && scheduleItem.warmAwakeSettings.warmUpEnabled) {
+        const [hours, minutes] = scheduleItem.time.split(':').map(Number);
+        const now = new Date();
+        const scheduleTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours, minutes);
+        if (scheduleTime < now) {
+          scheduleTime.setDate(scheduleTime.getDate() + 1); // Schedule for tomorrow if time is in the past
+        }
+
+        const warmUpStartTime = new Date(scheduleTime.getTime() - scheduleItem.warmAwakeSettings.warmUpDuration * 60000);
+        const delay = warmUpStartTime.getTime() - now.getTime();
+
+        if (delay > 0) {
+          setTimeout(async () => {
+            this.log.info(`Starting warm-up for ${this.name} at ${warmUpStartTime.toLocaleTimeString()}`);
+            await this.warmUpDevice(scheduleItem.warmAwakeSettings.warmUpTemperature);
+          }, delay);
+        }
+      }
+    });
   }
 
   private async warmUpDevice(temperature: number): Promise<void> {
@@ -294,7 +315,7 @@ class SleepMeAccessory implements AccessoryPlugin {
       this.log.error('Cannot warm up, device ID is missing.');
       return;
     }
-  
+
     try {
       const url = `https://api.developer.sleep.me/v1/devices/${this.deviceId}/control`;
       const headers = {
@@ -302,29 +323,30 @@ class SleepMeAccessory implements AccessoryPlugin {
         'Content-Type': 'application/json',
       };
       const data = { set_temperature_c: temperature, brightness_level: 100, thermal_control_status: 'heating' };
-  
+
       this.logAxiosRequest('PATCH', url, headers, data); // Changed to PATCH
-  
+
       await this.rateLimitedApiCall(async () => {
         const response = await axios.patch(url, data, { headers }); // Changed to patch
-  
+
         this.logAxiosResponse('PATCH', url, response); // Changed to PATCH
-  
+
         this.log.info(`Warmed up ${this.name} to ${temperature}°C`);
       });
     } catch (error: any) {
       if (axios.isAxiosError(error)) {
         const axiosError = error as AxiosError;
         if (axiosError.response) {
-          this.log.error(`Error warming up device: Status code ${axiosError.response.status}`);
-          this.log.error(`Error data: ${JSON.stringify(axiosError.response.data)}`);
+          this.log.error(`[API Error] PATCH ${URL} - Status: ${axiosError.response.status}`);
+          this.log.error(`[API Error Headers] ${JSON.stringify(axiosError.response.headers)}`);
+          this.log.error(`[API Error Data] ${JSON.stringify(axiosError.response.data)}`);
         } else if (axiosError.request) {
-          this.log.error('Error warming up device: No response received');
+          this.log.error(`[API Error] PATCH ${URL} - No response received`);
         } else {
-          this.log.error('Error warming up device:', axiosError.message);
+          this.log.error(`[API Error] PATCH ${URL} - ${axiosError.message}`);
         }
       } else {
-        this.log.error('An unknown error occurred:', error);
+        this.log.error(`[API Error] PATCH ${URL} - An unknown error occurred: ${error}`);
       }
     }
   }
