@@ -7,7 +7,7 @@
   },
   "description": "HomeBridge HTTP Status Control",
   "plugins": [
-    "homebridge-plugin-name",
+    "homebridge-sleepmepro",
     "homebridge-config-ui-x"
   ],
   "platforms": [
@@ -23,9 +23,9 @@
       "debug": false
     },
     {
-      "name": "homebridge-plugin-name",
-      "platform": "ExampleHomebridgePlugin"
-    }
+      "name": "Dock Pro",
+      "platform": "SleepMePlatform",
+      "apiToken": "YOUR_SLEEME_API_TOKEN" }
   ],
   "accessories": []
 }
