@@ -2,7 +2,7 @@
   "name": "homebridge-sleepmepro",
   "displayName": "Homebridge SleepMePro",
   "type": "module",
-  "version": "2.0.0",
+  "version": "1.0.0",
   "private": false,
   "description": "Homebridge plugin for SleepMe devices",
   "author": "James Field",
@@ -51,7 +51,7 @@
   },
   "homebridge": {
     "pluginAlias": "sleepmepro",
-    "pluginType": "accessory",
+    "pluginType": "platform",
     "schema": "config.schema.json"
   }
 }

@@ -25,7 +25,8 @@
     {
       "name": "Dock Pro",
       "platform": "SleepMePlatform",
-      "apiToken": "YOUR_SLEEME_API_TOKEN" }
+      "apiToken": "YOUR_SLEEME_API_TOKEN"
+    }
   ],
   "accessories": []
 }
