@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
+ 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { API, Characteristic, DynamicPlatformPlugin, Logging, PlatformAccessory, PlatformConfig, Service } from 'homebridge';
 import axios, { AxiosResponse, AxiosError } from 'axios';
@@ -80,6 +80,9 @@ export class SleepMePlatform implements DynamicPlatformPlugin {
             new SleepMeAccessory(this, accessory);
             this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
           }
+
+          // Fetch and log device status
+          await this.fetchDeviceStatus(device.id);
         }
       } else {
         this.log.warn('No Sleepme devices found.');
@@ -97,6 +100,34 @@ export class SleepMePlatform implements DynamicPlatformPlugin {
         }
       } else {
         this.log.error(`[API Error] GET devices - An unknown error occurred: ${error}`);
+      }
+    }
+  }
+
+  async fetchDeviceStatus(deviceId: string) {
+    try {
+      const statusUrl = `https://api.developer.sleep.me/v1/devices/${deviceId}/status`;
+      const headers = {
+        Authorization: `Bearer ${this.apiToken}`,
+        'Content-Type': 'application/json',
+      };
+
+      const statusResponse: AxiosResponse<DeviceStatusResponse> = await axios.get(statusUrl, { headers });
+
+      this.log.info(`Device ${deviceId} status:`, statusResponse.data);
+    } catch (error: any) {
+      if (axios.isAxiosError(error)) {
+        const axiosError = error as AxiosError;
+        if (axiosError.response) {
+          this.log.error(`[API Error] GET device status - Status: ${axiosError.response.status}`);
+          this.log.error(`[API Error Data] ${JSON.stringify(axiosError.response.data)}`);
+        } else if (axiosError.request) {
+          this.log.error('[API Error] GET device status - No response received');
+        } else {
+          this.log.error(`[API Error] GET device status - ${axiosError.message}`);
+        }
+      } else {
+        this.log.error(`[API Error] GET device status - An unknown error occurred: ${error}`);
       }
     }
   }
