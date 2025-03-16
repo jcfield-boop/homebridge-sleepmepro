@@ -1,29 +1,28 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { API, Characteristic, DynamicPlatformPlugin, Logging, PlatformAccessory, PlatformConfig, Service } from 'homebridge';
+import axios, { AxiosResponse, AxiosError } from 'axios';
 
-import { ExamplePlatformAccessory } from './platformAccessory.js';
-import { PLATFORM_NAME, PLUGIN_NAME } from './settings.js';
+import { SleepMeAccessory } from './accessory';
+import { PLATFORM_NAME, PLUGIN_NAME } from './settings';
 
-// This is only required when using Custom Services and Characteristics not support by HomeKit
-import { EveHomeKitTypes } from 'homebridge-lib/EveHomeKitTypes';
+interface Device {
+  id: string;
+  // Add other properties as needed
+}
 
-/**
- * HomebridgePlatform
- * This class is the main constructor for your plugin, this is where you should
- * parse the user config and discover/register accessories with Homebridge.
- */
-export class ExampleHomebridgePlatform implements DynamicPlatformPlugin {
+interface DeviceStatusResponse {
+  about: {
+    firmware_version: string;
+  };
+  // Add other properties as needed
+}
+
+export class SleepMePlatform implements DynamicPlatformPlugin {
   public readonly Service: typeof Service;
   public readonly Characteristic: typeof Characteristic;
-
-  // this is used to track restored cached accessories
   public readonly accessories: Map<string, PlatformAccessory> = new Map();
-  public readonly discoveredCacheUUIDs: string[] = [];
-
-  // This is only required when using Custom Services and Characteristics not support by HomeKit
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  public readonly CustomServices: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  public readonly CustomCharacteristics: any;
+  private readonly apiToken: string;
 
   constructor(
     public readonly log: Logging,
@@ -32,118 +31,68 @@ export class ExampleHomebridgePlatform implements DynamicPlatformPlugin {
   ) {
     this.Service = api.hap.Service;
     this.Characteristic = api.hap.Characteristic;
+    this.apiToken = config.apiToken as string;
 
-    // This is only required when using Custom Services and Characteristics not support by HomeKit
-    this.CustomServices = new EveHomeKitTypes(this.api).Services;
-    this.CustomCharacteristics = new EveHomeKitTypes(this.api).Characteristics;
+    if (!this.apiToken) {
+      this.log.error('API Token not provided in config.json.');
+      return;
+    }
 
     this.log.debug('Finished initializing platform:', this.config.name);
 
-    // When this event is fired it means Homebridge has restored all cached accessories from disk.
-    // Dynamic Platform plugins should only register new accessories after this event was fired,
-    // in order to ensure they weren't added to homebridge already. This event can also be used
-    // to start discovery of new accessories.
     this.api.on('didFinishLaunching', () => {
-      log.debug('Executed didFinishLaunching callback');
-      // run the method to discover / register your devices as accessories
+      this.log.debug('Executed didFinishLaunching callback');
       this.discoverDevices();
     });
   }
 
-  /**
-   * This function is invoked when homebridge restores cached accessories from disk at startup.
-   * It should be used to set up event handlers for characteristics and update respective values.
-   */
   configureAccessory(accessory: PlatformAccessory) {
     this.log.info('Loading accessory from cache:', accessory.displayName);
-
-    // add the restored accessory to the accessories cache, so we can track if it has already been registered
     this.accessories.set(accessory.UUID, accessory);
   }
 
-  /**
-   * This is an example method showing how to register discovered accessories.
-   * Accessories must only be registered once, previously created accessories
-   * must not be registered again to prevent "duplicate UUID" errors.
-   */
-  discoverDevices() {
-    // EXAMPLE ONLY
-    // A real plugin you would discover accessories from the local network, cloud services
-    // or a user-defined array in the platform config.
-    const exampleDevices = [
-      {
-        exampleUniqueId: 'ABCD',
-        exampleDisplayName: 'Bedroom',
-      },
-      {
-        exampleUniqueId: 'EFGH',
-        exampleDisplayName: 'Kitchen',
-      },
-      {
-        // This is an example of a device which uses a Custom Service
-        exampleUniqueId: 'IJKL',
-        exampleDisplayName: 'Backyard',
-        CustomService: 'AirPressureSensor',
-      },
-    ];
+  async discoverDevices() {
+    try {
+      const devicesUrl = 'https://api.developer.sleep.me/v1/devices';
+      const headers = {
+        Authorization: `Bearer ${this.apiToken}`,
+        'Content-Type': 'application/json',
+      };
 
-    // loop over the discovered devices and register each one if it has not already been registered
-    for (const device of exampleDevices) {
-      // generate a unique id for the accessory this should be generated from
-      // something globally unique, but constant, for example, the device serial
-      // number or MAC address
-      const uuid = this.api.hap.uuid.generate(device.exampleUniqueId);
+      const devicesResponse: AxiosResponse<Device[]> = await axios.get(devicesUrl, { headers });
 
-      // see if an accessory with the same uuid has already been registered and restored from
-      // the cached devices we stored in the `configureAccessory` method above
-      const existingAccessory = this.accessories.get(uuid);
+      if (devicesResponse.data && devicesResponse.data.length > 0) {
+        for (const device of devicesResponse.data) {
+          const uuid = this.api.hap.uuid.generate(device.id);
+          const existingAccessory = this.accessories.get(uuid);
 
-      if (existingAccessory) {
-        // the accessory already exists
-        this.log.info('Restoring existing accessory from cache:', existingAccessory.displayName);
-
-        // if you need to update the accessory.context then you should run `api.updatePlatformAccessories`. e.g.:
-        // existingAccessory.context.device = device;
-        // this.api.updatePlatformAccessories([existingAccessory]);
-
-        // create the accessory handler for the restored accessory
-        // this is imported from `platformAccessory.ts`
-        new ExamplePlatformAccessory(this, existingAccessory);
-
-        // it is possible to remove platform accessories at any time using `api.unregisterPlatformAccessories`, e.g.:
-        // remove platform accessories when no longer present
-        // this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [existingAccessory]);
-        // this.log.info('Removing existing accessory from cache:', existingAccessory.displayName);
+          if (existingAccessory) {
+            this.log.info('Restoring existing accessory from cache:', existingAccessory.displayName);
+            new SleepMeAccessory(this, existingAccessory);
+          } else {
+            this.log.info('Adding new accessory:', device.id);
+            const accessory = new this.api.platformAccessory(device.id, uuid);
+            accessory.context.device = device;
+            new SleepMeAccessory(this, accessory);
+            this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
+          }
+        }
       } else {
-        // the accessory does not yet exist, so we need to create it
-        this.log.info('Adding new accessory:', device.exampleDisplayName);
-
-        // create a new accessory
-        const accessory = new this.api.platformAccessory(device.exampleDisplayName, uuid);
-
-        // store a copy of the device object in the `accessory.context`
-        // the `context` property can be used to store any data about the accessory you may need
-        accessory.context.device = device;
-
-        // create the accessory handler for the newly create accessory
-        // this is imported from `platformAccessory.ts`
-        new ExamplePlatformAccessory(this, accessory);
-
-        // link the accessory to your platform
-        this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
+        this.log.warn('No Sleepme devices found.');
       }
-
-      // push into discoveredCacheUUIDs
-      this.discoveredCacheUUIDs.push(uuid);
-    }
-
-    // you can also deal with accessories from the cache which are no longer present by removing them from Homebridge
-    // for example, if your plugin logs into a cloud account to retrieve a device list, and a user has previously removed a device
-    // from this cloud account, then this device will no longer be present in the device list but will still be in the Homebridge cache
-    for (const [uuid, accessory] of this.accessories) {
-      if (!this.discoveredCacheUUIDs.includes(uuid)) {
-        this.log.info('Removing existing accessory from cache:', accessory.displayName);
-        this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
+    } catch (error: any) {
+      if (axios.isAxiosError(error)) {
+        const axiosError = error as AxiosError;
+        if (axiosError.response) {
+          this.log.error(`[API Error] GET devices - Status: ${axiosError.response.status}`);
+          this.log.error(`[API Error Data] ${JSON.stringify(axiosError.response.data)}`);
+        } else if (axiosError.request) {
+          this.log.error('[API Error] GET devices - No response received');
+        } else {
+          this.log.error(`[API Error] GET devices - ${axiosError.message}`);
+        }
+      } else {
+        this.log.error(`[API Error] GET devices - An unknown error occurred: ${error}`);
       }
     }
   }
