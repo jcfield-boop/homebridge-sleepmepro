@@ -23,9 +23,9 @@
       "debug": false
     },
     {
-      "name": "Dock Pro",
+      "name": "SleepMePro",
       "platform": "SleepMePlatform",
-      "apiToken": "YOUR_SLEEME_API_TOKEN"
+      "apiToken": "YOUR_SLEEPME_API_TOKEN"
     }
   ],
   "accessories": []
