@@ -200,26 +200,25 @@ class SleepMeAccessory implements AccessoryPlugin {
       this.log.error('Device ID is missing.');
       return;
     }
-
+  
     try {
-      const url = `https://api.developer.sleep.me/v1/devices/${this.deviceId}/status`;
+      const encodedDeviceId = encodeURIComponent(this.deviceId); // Explicitly encode device ID
+      const url = `https://api.developer.sleep.me/v1/devices/${encodedDeviceId}/status`;
       const headers = {
         Authorization: `Bearer ${this.apiToken}`,
         'Content-Type': 'application/json',
       };
-
-      // No logging for successful requests
-
+  
+      this.log.debug(`Constructed URL: ${url}`); // Log the constructed URL
+  
       const response = await axios.get<DeviceStatusResponse>(url, { headers });
-
-      this.logAxiosResponse('GET', url, response); // Log only errors
-
+  
+      this.logAxiosResponse('GET', url, response);
+  
       this.currentTemperature = response.data.status.water_temperature_c;
       this.targetTemperature = response.data.control.set_temperature_c;
       this.currentHeatingState = response.data.control.thermal_control_status === 'heating' ? 1 : 0;
-
-      // No logging for successful status updates
-
+  
     } catch (error: any) {
       if (axios.isAxiosError(error)) {
         const axiosError = error as AxiosError;
@@ -237,7 +236,6 @@ class SleepMeAccessory implements AccessoryPlugin {
       }
     }
   }
-
   private async setTemperature(value: CharacteristicValue): Promise<void> {
     const targetTemp = value as number;
     if (!this.deviceId) {
