@@ -8,7 +8,8 @@ import { PLATFORM_NAME, PLUGIN_NAME } from './settings';
 
 interface Device {
   id: string;
-  // Add other properties as needed
+  // Add other properties as needed from the API response
+  // Example: name: string;
 }
 
 interface DeviceStatusResponse {
@@ -53,6 +54,7 @@ export class SleepMePlatform implements DynamicPlatformPlugin {
 
   async discoverDevices() {
     try {
+      this.log.info('Discovering Sleepme devices...');
       const devicesUrl = 'https://api.developer.sleep.me/v1/devices';
       const headers = {
         Authorization: `Bearer ${this.apiToken}`,
@@ -62,6 +64,7 @@ export class SleepMePlatform implements DynamicPlatformPlugin {
       const devicesResponse: AxiosResponse<Device[]> = await axios.get(devicesUrl, { headers });
 
       if (devicesResponse.data && devicesResponse.data.length > 0) {
+        this.log.info(`Found ${devicesResponse.data.length} Sleepme device(s).`);
         for (const device of devicesResponse.data) {
           const uuid = this.api.hap.uuid.generate(device.id);
           const existingAccessory = this.accessories.get(uuid);
@@ -72,6 +75,7 @@ export class SleepMePlatform implements DynamicPlatformPlugin {
           } else {
             this.log.info('Adding new accessory:', device.id);
             const accessory = new this.api.platformAccessory(device.id, uuid);
+            // Add more device context if needed
             accessory.context.device = device;
             new SleepMeAccessory(this, accessory);
             this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
