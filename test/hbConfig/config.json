@@ -24,7 +24,7 @@
     },
     {
       "name": "SleepMePro",
-      "platform": "SleepMePlatform",
+      "platform": "SleepMePro",
       "apiToken": "YOUR_SLEEPME_API_TOKEN"
     }
   ],
