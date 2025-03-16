@@ -125,7 +125,8 @@ class SleepMeAccessory implements AccessoryPlugin {
 
   private logAxiosResponse(method: string, url: string, response: AxiosResponse): void {
     if (response.status >= 400) {
-      this.log.error(`[API Error] ${method} - Status: ${response.status}`);
+      this.log.error(`[API Error] ${method} ${url} - Status: ${response.status}`);
+      // No longer logging headers or data by default
     }
   }
 
@@ -257,7 +258,7 @@ class SleepMeAccessory implements AccessoryPlugin {
     }
 
     try {
-      const url = `https://api.developer.sleep.me/v1/devices/${this.deviceId}/control`;
+      const url = `https://api.developer.sleep.me/v1/devices/${this.deviceId}`;
       const headers = {
         Authorization: `Bearer ${this.apiToken}`,
         'Content-Type': 'application/json',
