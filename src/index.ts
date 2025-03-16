@@ -202,19 +202,20 @@ class SleepMeAccessory implements AccessoryPlugin {
     }
   
     try {
-      const encodedDeviceId = encodeURIComponent(this.deviceId); // Explicitly encode device ID
-      const url = `https://api.developer.sleep.me/v1/devices/${encodedDeviceId}/status`;
+      const encodedDeviceId = encodeURIComponent(this.deviceId);
+      const url = `https://api.developer.sleep.me/v1/devices/${encodedDeviceId}`; // Removed /status
       const headers = {
         Authorization: `Bearer ${this.apiToken}`,
         'Content-Type': 'application/json',
       };
   
-      this.log.debug(`Constructed URL: ${url}`); // Log the constructed URL
+      this.log.debug(`Constructed URL: ${url}`);
   
       const response = await axios.get<DeviceStatusResponse>(url, { headers });
   
       this.logAxiosResponse('GET', url, response);
   
+      // Assuming the response structure is the same, adjust accordingly
       this.currentTemperature = response.data.status.water_temperature_c;
       this.targetTemperature = response.data.control.set_temperature_c;
       this.currentHeatingState = response.data.control.thermal_control_status === 'heating' ? 1 : 0;
