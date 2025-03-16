@@ -155,29 +155,41 @@ class SleepMeAccessory implements AccessoryPlugin {
 
   private async fetchDeviceIdAndUpdateStatus(): Promise<void> {
     try {
-      const url = 'https://api.developer.sleep.me/v1/devices';
+      const devicesUrl = 'https://api.developer.sleep.me/v1/devices';
       const headers = {
         Authorization: `Bearer ${this.apiToken}`,
         'Content-Type': 'application/json',
       };
-
-      // No logging for successful requests
-
-      const response = await axios.get<Device[]>(url, { headers });
-
-      this.logAxiosResponse('GET', url, response); // Log only errors
-
-      if (!Array.isArray(response.data) || response.data.length === 0) {
+  
+      // Get the device ID
+      const devicesResponse = await axios.get<Device[]>(devicesUrl, { headers });
+  
+      this.logAxiosResponse('GET', devicesUrl, devicesResponse); // Log only errors
+  
+      if (!Array.isArray(devicesResponse.data) || devicesResponse.data.length === 0) {
         this.log.error('No devices found.');
         return;
       }
-
-      this.deviceId = response.data[0].id.trim();
-      this.firmwareVersion = response.data[0].firmwareVersion || 'Unknown';
-
+  
+      this.deviceId = devicesResponse.data[0].id.trim();
+  
+      if (!this.deviceId) {
+        this.log.error('Device ID not found.');
+        return;
+      }
+  
+      // Get the device status (including firmware version)
+      const statusUrl = `https://api.developer.sleep.me/v1/devices/${this.deviceId}`;
+      const statusResponse = await axios.get<DeviceStatusResponse>(statusUrl, { headers });
+  
+      this.logAxiosResponse('GET', statusUrl, statusResponse); // Log only errors
+  
+      this.firmwareVersion = statusResponse.data.about.firmware_version || 'Unknown';
+  
       this.log.info(`Using device ID: ${this.deviceId}, Firmware: ${this.firmwareVersion}`);
-
-      await this.updateDeviceStatus();
+  
+      await this.updateDeviceStatus(); // Continue with regular status updates
+  
     } catch (error: any) {
       if (axios.isAxiosError(error)) {
         const axiosError = error as AxiosError;
