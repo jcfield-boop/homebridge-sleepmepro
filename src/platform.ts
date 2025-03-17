@@ -2,8 +2,8 @@
 import type { API, Characteristic, DynamicPlatformPlugin, Logging, PlatformAccessory, PlatformConfig, Service } from 'homebridge';
 import axios, { AxiosResponse, AxiosError } from 'axios';
 
-import { SleepMeAccessory } from './accessory';
-import { PLATFORM_NAME, PLUGIN_NAME } from './settings';
+import { SleepMeAccessory } from './accessory.js';
+import { PLATFORM_NAME, PLUGIN_NAME } from './settings.js';
 
 interface Device {
   id: string;
