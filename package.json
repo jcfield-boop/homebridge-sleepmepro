@@ -27,7 +27,7 @@
   },
   "scripts": {
     "build": "tsc",
-    "lint": "eslint src --ext .ts --config eslinte.config.js",
+    "lint": "eslint src --ext .ts --config eslint.config.js",
     "prepublishOnly": "npm run lint && npm run build",
     "watch": "tsc -w",
     "test": "jest",
