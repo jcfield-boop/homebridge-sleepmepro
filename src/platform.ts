@@ -105,7 +105,7 @@ export class SleepMePlatform implements DynamicPlatformPlugin {
 
   async fetchDeviceStatus(deviceId: string) {
     try {
-      const statusUrl = `https://api.developer.sleep.me/v1/devices/${deviceId}/status`;
+      const statusUrl = `https://api.developer.sleep.me/v1/devices/${deviceId}`;
       const headers = {
         Authorization: `Bearer ${this.apiToken}`,
         'Content-Type': 'application/json',

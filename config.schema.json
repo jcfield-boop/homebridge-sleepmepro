@@ -1,15 +1,14 @@
 {
-  "pluginAlias": "sleepmepro",
-  "pluginType": "accessory",
+  "pluginAlias": "SleepMePlatform",
+  "pluginType": "platform",
   "singular": true,
   "schema": {
     "type": "object",
     "properties": {
       "name": {
-        "title": "Accessory Name",
+        "title": "Platform Name",
         "type": "string",
-        "default": "DockPro",
-        "description": "Enter a name for this device",
+        "default": "SleepMe System",
         "required": true
       },
       "apiToken": {
@@ -27,90 +26,22 @@
         "enumNames": ["Celsius (°C)", "Fahrenheit (°F)"],
         "description": "Select temperature unit"
       },
-      "temperatureSchedule": {
-        "title": "Temperature Schedule",
+      "devices": {
         "type": "array",
-        "description": "Configure temperature changes throughout the day",
-        "default": [
-          {
-            "day": "everyday",
-            "time": "21:30",
-            "temperature": 20
-          }
-        ],
+        "title": "Device Overrides",
+        "description": "Optional: Override names for specific devices",
         "items": {
           "type": "object",
           "properties": {
-            "day": {
-              "title": "Day of Week",
+            "id": {
+              "title": "Device ID",
               "type": "string",
-              "enum": ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "everyday"],
-              "enumNames": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday", "Every Day"],
-              "default": "everyday",
-              "description": "Select the day for this temperature change",
-              "required": true
+              "description": "The device ID from the API"
             },
-            "time": {
-              "title": "Time",
+            "name": {
+              "title": "Custom Name",
               "type": "string",
-              "placeholder": "21:30",
-              "default": "21:30",
-              "description": "Enter time in HH:MM format (24-hour clock)",
-              "pattern": "^([01]\\d|2[0-3]):([0-5]\\d)$",
-              "required": true
-            },
-            "temperature": {
-              "title": "Temperature",
-              "type": "number",
-              "default": 20,
-              "minimum": 10,
-              "maximum": 35,
-              "description": "Set the target temperature (10-35°C)",
-              "required": true
-            },
-            "isWakeTime": {
-              "title": "This is a wake-up time",
-              "type": "boolean",
-              "default": false,
-              "description": "Enable to configure warm-up settings for wake-up"
-            },
-            "warmAwakeSettings": {
-              "title": "Warm Awake Settings",
-              "type": "object",
-              "description": "Configure warm-up before wake time",
-              "condition": {
-                "functionBody": "return model.isWakeTime === true;"
-              },
-              "properties": {
-                "warmUpEnabled": {
-                  "title": "Enable Warm Awake",
-                  "type": "boolean",
-                  "default": true,
-                  "description": "Enable gradual warm-up before wake time"
-                },
-                "warmUpDuration": {
-                  "title": "Warm-up Duration",
-                  "type": "number",
-                  "default": 10,
-                  "minimum": 5,
-                  "maximum": 60,
-                  "description": "Minutes before wake-up to begin warming (5-60 minutes)",
-                  "condition": {
-                    "functionBody": "return model.warmAwakeSettings.warmUpEnabled === true;"
-                  }
-                },
-                "warmUpTemperature": {
-                  "title": "Warm-up Temperature",
-                  "type": "number",
-                  "default": 25,
-                  "minimum": 10,
-                  "maximum": 35,
-                  "description": "Target temperature to reach at wake-up time",
-                  "condition": {
-                    "functionBody": "return model.warmAwakeSettings.warmUpEnabled === true;"
-                  }
-                }
-              }
+              "description": "Custom name for this device"
             }
           }
         }
