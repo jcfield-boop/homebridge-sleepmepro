@@ -1,4 +1,4 @@
-const { FlatCompat } = require('eslint/use-at-your-own-risk');
+const { FlatCompat } = require('@eslint/eslintrc');
 const compat = new FlatCompat({
     baseDirectory: __dirname,
     resolvePluginsRelativeTo: __dirname,
