@@ -1,3 +1,6 @@
+const eslintRecommended = require('eslint/conf/eslint-recommended');
+const tsRecommended = require('@typescript-eslint/eslint-plugin/dist/configs/recommended');
+
 module.exports = [
   {
     files: ['src/temp/**/*.ts'],
@@ -7,9 +10,7 @@ module.exports = [
     plugins: {
       '@typescript-eslint': require('@typescript-eslint/eslint-plugin'),
     },
-    extends: [
-      'eslint:recommended',
-      'plugin:@typescript-eslint/recommended',
-    ],
+    ...eslintRecommended,
+    ...tsRecommended,
   },
 ];
