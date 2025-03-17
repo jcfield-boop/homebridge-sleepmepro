@@ -1,7 +1,7 @@
 import { API, DynamicPlatformPlugin, Logger, PlatformAccessory, PlatformConfig, Service, Characteristic } from 'homebridge';
 
-import { SleepMePlatformAccessory } from './dist/platformAccessory.js';
-import { SleepMeApi } from './dist/sleepme-api.js';
+import { SleepMePlatformAccessory } from './platformAccessory';
+import { SleepMeApi } from './sleepme-api';
 
 interface SleepMePlatformConfig extends PlatformConfig {
   apiToken: string;
