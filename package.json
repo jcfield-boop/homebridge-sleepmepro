@@ -50,7 +50,7 @@
     "@typescript-eslint/parser": "^8.24.1"
   },
   "homebridge": {
-    "pluginAlias": "SleepMePro",
+    "pluginAlias": "SleepMePlatform",
     "pluginType": "platform",
     "schema": "config.schema.json"
   }
