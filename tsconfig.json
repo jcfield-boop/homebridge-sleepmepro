@@ -6,7 +6,7 @@
       "ES2022"
     ],
     "rootDir": "./src",
-    "module": "NodeNext",
+    "module": "nodenext",
     "moduleResolution": "nodenext",
     "strict": true,
     "declaration": true,
