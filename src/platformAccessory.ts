@@ -1,203 +1,179 @@
 import { Service, PlatformAccessory, CharacteristicValue } from 'homebridge';
-import { SleepMePlatform } from './platform.js';
-import { SleepMeApi } from './sleepme-api.js';
+import { SleepMePlatform } from './platform';
+import { SleepMeApi } from './sleepme-api';
 
+interface DeviceStatus {
+  "control.target_temperature_c": number;
+  "control.current_temperature_c": number;
+  // Add other properties based on the API documentation
+}
+
+/**
+ * Platform Accessory
+ * An instance of this class is created for each accessory your platform registers
+ * Each accessory may expose multiple services of different service types.
+ */
 export class SleepMePlatformAccessory {
   private service: Service;
-  private readonly deviceId: string;
-  private currentTemperature = 0;
-  private targetTemperature = 0;
-  private currentHeatingState = 0;
+  private targetTemperature: number;
+  private currentTemperature!: number;
   private targetHeatingState = 0;
-  private firmwareVersion = 'Unknown';
-  private displayUnit: string;
+  private deviceId: string;
+  private firmwareVersion!: string;
 
   constructor(
     private readonly platform: SleepMePlatform,
     private readonly accessory: PlatformAccessory,
-    private readonly apiService: SleepMeApi,
+    private apiService: SleepMeApi,
   ) {
-    this.deviceId = accessory.context.device.deviceId;
-    this.displayUnit = platform.config.unit || 'C';
-    
-    // Set up accessory information
-    const accessoryInfo = this.accessory.getService(this.platform.Service.AccessoryInformation);
-    if (accessoryInfo) {
-      accessoryInfo
-        .setCharacteristic(this.platform.Characteristic.Manufacturer, 'SleepMe')
-        .setCharacteristic(this.platform.Characteristic.Model, accessory.context.device.model || 'Unknown')
-        .setCharacteristic(this.platform.Characteristic.SerialNumber, this.deviceId)
-        .setCharacteristic(this.platform.Characteristic.FirmwareRevision, accessory.context.device.firmwareVersion || 'Unknown');
+
+    // set accessory information
+    this.accessory.getService(this.platform.Service.AccessoryInformation)!
+      .setCharacteristic(this.platform.Characteristic.Manufacturer, 'Sleepme Inc.')
+      .setCharacteristic(this.platform.Characteristic.Model, 'ChiliPad')
+      .setCharacteristic(this.platform.Characteristic.SerialNumber, this.accessory.UUID);
+
+    // get device ID
+    this.deviceId = this.accessory.context.device.id;
+
+    // get target temperature from cache
+    if (this.accessory.context.device["control.target_temperature_c"] !== undefined) {
+      this.targetTemperature = this.accessory.context.device["control.target_temperature_c"];
+    } else {
+      this.targetTemperature = 21;
     }
 
-    // Set up the thermostat service
-    this.service = this.accessory.getService(this.platform.Service.Thermostat) ||
-                   this.accessory.addService(this.platform.Service.Thermostat);
+    // get firmware version from cache
+    if (this.accessory.context.device.firmwareVersion) {
+      this.firmwareVersion = this.accessory.context.device.firmwareVersion;
+      this.accessory.getService(this.platform.Service.AccessoryInformation)!
+        .setCharacteristic(this.platform.Characteristic.FirmwareRevision, this.firmwareVersion);
+    }
 
-    this.service.setCharacteristic(this.platform.Characteristic.Name, accessory.displayName);
+    // set the service name, this is what is displayed to the user
+    this.service = this.accessory.getService(this.platform.Service.Thermostat) || this.accessory.addService(this.platform.Service.Thermostat);
 
-    // Set up characteristic handlers
+    // register handlers for the Target Temperature Characteristic
+    this.service.getCharacteristic(this.platform.Characteristic.TargetTemperature)
+      .onSet(this.setTargetTemperature.bind(this))
+      .onGet(() => {
+        return this.targetTemperature;
+      });
+
+    // register handlers for the Current Temperature Characteristic
     this.service.getCharacteristic(this.platform.Characteristic.CurrentTemperature)
       .onGet(this.getCurrentTemperature.bind(this));
 
-    this.service.getCharacteristic(this.platform.Characteristic.TargetTemperature)
-      .setProps({
-        minValue: 10,
-        maxValue: 46,
-        minStep: 0.5,
-      })
-      .onSet(this.setTargetTemperature.bind(this))
-      .onGet(this.getTargetTemperature.bind(this));
-
-    this.service.getCharacteristic(this.platform.Characteristic.CurrentHeatingCoolingState)
+    // register handlers for the Current Heating Cooling State Characteristic
+    this.service.getCharacteristic(this.platform.Characteristic.CurrentHeaterCoolerState)
       .onGet(this.getCurrentHeatingCoolingState.bind(this));
 
-    this.service.getCharacteristic(this.platform.Characteristic.TargetHeatingCoolingState)
-      .onSet(this.setTargetHeatingCoolingState.bind(this))
-      .onGet(this.getTargetHeatingCoolingState.bind(this));
+    // register handlers for the Target Heating Cooling State Characteristic
+    this.service.getCharacteristic(this.platform.Characteristic.TargetHeaterCoolerState)
+      .onSet(this.setTargetHeaterCoolerState.bind(this));
 
-    this.service.getCharacteristic(this.platform.Characteristic.TemperatureDisplayUnits)
-      .onGet(this.getTemperatureDisplayUnits.bind(this))
-      .onSet(this.setTemperatureDisplayUnits.bind(this));
-
-    // Get initial device status
-    this.updateDeviceStatus()
-      .catch(error => this.platform.log.error(`Error initializing device status: ${error}`));
-    
-    // Set up polling interval
+    // Update device status periodically
+    this.updateDeviceStatus();
     setInterval(() => {
-      this.updateDeviceStatus()
-        .catch(error => this.platform.log.error(`Error updating device status: ${error}`));
-    }, 60000); // Update every minute
+      this.updateDeviceStatus();
+    }, 30000);
   }
 
-  async updateDeviceStatus(): Promise<void> {
+  async updateDeviceStatus() {
     try {
-      const deviceStatus = await this.apiService.getDeviceStatus(this.deviceId);
-      
-      if (!deviceStatus || !deviceStatus.status) {
-        this.platform.log.error(`Failed to get status for device ${this.deviceId}`);
+      const deviceId = this.accessory.context.device.id;
+      this.platform.log.debug('Fetching device status from: ' + this.platform.apiService.baseUrl + '/devices/' + deviceId);
+      const deviceStatus: DeviceStatus = await this.apiService.getDeviceStatus(deviceId);
+      this.platform.log.debug('[API] GET ' + this.platform.apiService.baseUrl + '/devices/' + deviceId + ' - Status: 200');
+
+      if (!deviceStatus) {
+        this.platform.log.error('Unable to get device status');
         return;
       }
-      
-      // Update temperature values (always stored internally in Celsius)
-      if (deviceStatus.status.currentTemperature !== undefined) {
-        this.currentTemperature = deviceStatus.status.currentTemperature;
+      // Access properties using the correct names from DeviceStatus
+      if (deviceStatus["control.current_temperature_c"] !== undefined) {
+        this.currentTemperature = deviceStatus["control.current_temperature_c"];
+        this.service.getCharacteristic(this.platform.Characteristic.CurrentTemperature).updateValue(this.currentTemperature);
       }
-      
-      if (deviceStatus.status.targetTemperature !== undefined) {
-        this.targetTemperature = deviceStatus.status.targetTemperature;
+      if (deviceStatus["control.target_temperature_c"] !== undefined) {
+        this.targetTemperature = deviceStatus["control.target_temperature_c"];
+        this.service.getCharacteristic(this.platform.Characteristic.TargetTemperature).updateValue(this.targetTemperature);
       }
-      
-      // Update heating/cooling state
-      if (deviceStatus.status.heatingCoolingState !== undefined) {
-        const state = this.mapSleepMeStatusToHomeKit(deviceStatus.status.heatingCoolingState);
-        this.currentHeatingState = state;
-        this.targetHeatingState = state;
-      }
-      
-      // Update firmware version if available
-      if (deviceStatus.firmwareVersion) {
-        this.firmwareVersion = deviceStatus.firmwareVersion;
-        
-        const accessoryInfo = this.accessory.getService(this.platform.Service.AccessoryInformation);
-        if (accessoryInfo) {
-          accessoryInfo.updateCharacteristic(this.platform.Characteristic.FirmwareRevision, this.firmwareVersion);
-        }
-      }
-      
-      // Update HomeKit characteristics
-      this.service.updateCharacteristic(
-        this.platform.Characteristic.CurrentTemperature, 
-        this.currentTemperature
-      );
-      
-      this.service.updateCharacteristic(
-        this.platform.Characteristic.TargetTemperature, 
-        this.targetTemperature
-      );
-      
-      this.service.updateCharacteristic(
-        this.platform.Characteristic.CurrentHeatingCoolingState, 
-        this.currentHeatingState
-      );
-      
-      this.service.updateCharacteristic(
-        this.platform.Characteristic.TargetHeatingCoolingState, 
-        this.targetHeatingState
-      );
-      
-      this.platform.log.debug(
-        `Updated device status: Temp=${this.currentTemperature}°C, ` + 
-        `Target=${this.targetTemperature}°C, ` + 
-        `State=${deviceStatus.status.heatingCoolingState || 'unknown'}`
-      );
-    } catch (error) {
-      this.platform.log.error(`Failed to update device status: ${error}`);
+
+      this.platform.log.debug(`Updated device status: Temp=${this.currentTemperature}°C, Target=${this.targetTemperature}°C`);
+    } catch (error: any) {
+      this.platform.log.error('Error updating device status:', error);
     }
   }
 
-  private mapSleepMeStatusToHomeKit(status: string): number {
-    switch (status?.toLowerCase()) {
-      case 'heating':
-        return this.platform.Characteristic.CurrentHeatingCoolingState.HEAT;
-      case 'cooling':
-        return this.platform.Characteristic.CurrentHeatingCoolingState.COOL;
-      default:
-        return this.platform.Characteristic.CurrentHeatingCoolingState.OFF;
-    }
-  }
-
-  async getCurrentTemperature(): Promise<CharacteristicValue> {
-    return this.currentTemperature;
-  }
-
-  async getTargetTemperature(): Promise<CharacteristicValue> {
-    return this.targetTemperature;
-  }
-
-  async setTargetTemperature(value: CharacteristicValue): Promise<void> {
-    this.targetTemperature = value as number;
-    
+  async setTargetTemperature(value: CharacteristicValue) {
     try {
-      await this.apiService.setTargetTemperature(this.deviceId, this.targetTemperature);
-      this.platform.log.info(`Set target temperature to ${this.targetTemperature}°C for ${this.accessory.displayName}`);
-    } catch (error) {
-      this.platform.log.error(`Failed to set target temperature: ${error}`);
+      this.platform.log.debug('Set Target Temperature: ' + value);
+      const deviceId = this.accessory.context.device.id;
+      this.targetTemperature = value as number;
+      await this.apiService.setDeviceSettings(deviceId, { "control.set_temperature_c": this.targetTemperature });
+      this.platform.log('Successfully set target temperature: ' + this.targetTemperature);
+    } catch (error: any) {
+      this.platform.log.error('Error setting target temperature:', error.message);
     }
   }
 
-  async getCurrentHeatingCoolingState(): Promise<CharacteristicValue> {
-    return this.currentHeatingState;
-  }
-
-  async getTargetHeatingCoolingState(): Promise<CharacteristicValue> {
-    return this.targetHeatingState;
-  }
-
-  async setTargetHeatingCoolingState(value: CharacteristicValue): Promise<void> {
-    this.targetHeatingState = value as number;
-    
+  async setTargetHeaterCoolerState(value: CharacteristicValue) {
     try {
-      await this.apiService.setHeatingCoolingState(this.deviceId, this.targetHeatingState);
-      this.platform.log.info(`Set heating/cooling state to ${this.targetHeatingState} for ${this.accessory.displayName}`);
-    } catch (error) {
-      this.platform.log.error(`Failed to set heating/cooling state: ${error}`);
+      this.platform.log.debug('Set Target Heater Cooler State: ' + value);
+      const deviceId = this.accessory.context.device.id;
+
+      let targetTemperature: number;
+
+      switch (value) {
+        case this.platform.Characteristic.TargetHeaterCoolerState.OFF:
+          // Set to "off" temperature (e.g., current temperature)
+          targetTemperature = this.getCurrentTemperature();
+          this.platform.log.debug('Setting OFF ' + targetTemperature);
+          break;
+        case this.platform.Characteristic.TargetHeaterCoolerState.HEAT:
+          // Set to a heating temperature (e.g., +2°C above current)
+          targetTemperature = this.getCurrentTemperature() + 2;
+          this.platform.log.debug('Setting HEAT ' + targetTemperature);
+          break;
+        case this.platform.Characteristic.TargetHeaterCoolerState.COOL:
+          // Set to a cooling temperature (e.g., -2°C below current)
+          targetTemperature = this.getCurrentTemperature() - 2;
+          this.platform.log.debug('Setting COOL ' + targetTemperature);
+          break;
+        case this.platform.Characteristic.TargetHeaterCoolerState.AUTO:
+          // In "Auto" mode, we primarily focus on setting the target temperature.
+          // The device itself will decide whether to heat or cool based on its internal logic.
+          targetTemperature = this.service.getCharacteristic(this.platform.Characteristic.TargetTemperature).value as number;
+          this.platform.log.debug('Setting AUTO ' + targetTemperature);
+          break;
+        default:
+          this.platform.log.warn(`Unexpected target heater cooler state value: ${value}`);
+          return;
+      }
+
+      // Ensure targetTemperature is within the valid range (13.0-48.0)
+      targetTemperature = Math.max(13.0, Math.min(48.0, targetTemperature));
+
+      this.platform.log.debug(`Setting target temperature to ${targetTemperature}°C`);
+
+      // Use setDeviceSettings instead of setTargetTemperature
+      await this.apiService.setDeviceSettings(deviceId, {
+        "control.set_temperature_c": targetTemperature,
+      });
+      this.platform.log('Successfully set target temperature: ' + targetTemperature);
+    } catch (error: any) {
+      this.platform.log.error('Error setting target heater cooler state:', error.message);
     }
   }
 
-  async getTemperatureDisplayUnits(): Promise<CharacteristicValue> {
-    return this.displayUnit === 'F'
-      ? this.platform.Characteristic.TemperatureDisplayUnits.FAHRENHEIT
-      : this.platform.Characteristic.TemperatureDisplayUnits.CELSIUS;
+  getCurrentTemperature(): number {
+    // Access the current temperature from the cache
+    return this.service.getCharacteristic(this.platform.Characteristic.CurrentTemperature).value as number;
   }
 
-  async setTemperatureDisplayUnits(value: CharacteristicValue): Promise<void> {
-    // Store the user preference
-    this.displayUnit = value as number === this.platform.Characteristic.TemperatureDisplayUnits.FAHRENHEIT
-      ? 'F'
-      : 'C';
-    
-    this.platform.log.debug(`Temperature display unit set to ${this.displayUnit}`);
+  getCurrentHeatingCoolingState(): number {
+    // Just return idle for now
+    return this.platform.Characteristic.CurrentHeaterCoolerState.IDLE;
   }
 }
