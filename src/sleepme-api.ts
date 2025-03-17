@@ -16,16 +16,17 @@ export interface SleepMeDevice {
 export interface DeviceResponse {
   id: string;
   name: string;
-  model: string;
+  attachments: string[];
+  model?: string;
+  about?: {
+    firmware_version?: string;
+  };
   status?: {
     water_temperature_c?: number;
   };
   control?: {
     set_temperature_c?: number;
     thermal_control_status?: string;
-  };
-  about?: {
-    firmware_version?: string;
   };
 }
 
@@ -131,34 +132,12 @@ export class SleepMeApi {
     }
   }
 
-  private mapSleepMeStatusToHomeKit(status: string): number {
-    switch (status?.toLowerCase()) {
-      case 'heating':
-        return 1; // HEAT
-      case 'cooling':
-        return 2; // COOL
-      default:
-        return 0; // OFF
-    }
-  }
-
-  private mapHomeKitStateToSleepMe(state: number): string {
-    switch (state) {
-      case 1: // HEAT
-        return 'heating';
-      case 2: // COOL
-        return 'cooling';
-      default:
-        return 'off';
-    }
-  }
-
   async getDevices(): Promise<SleepMeDevice[]> {
     try {
       const url = `${this.apiBaseUrl}/devices`;
       this.log.debug(`Fetching devices from: ${url}`);
 
-      const response = await this.rateLimitedApiCall<AxiosResponse<{devices: DeviceResponse[]}>>(
+      const response = await this.rateLimitedApiCall<AxiosResponse<DeviceResponse[]>>(
         async () => {
           return await axios({
             method: 'get',
@@ -173,16 +152,19 @@ export class SleepMeApi {
 
       this.logAxiosResponse('GET', url, response);
 
-      if (!response.data || !response.data.devices) {
+      // Log the actual response data for debugging
+      this.log.debug(`API response data: ${JSON.stringify(response.data)}`);
+
+      if (!response.data || !Array.isArray(response.data)) {
         this.log.error('Invalid response format from API');
         return [];
       }
 
-      return response.data.devices.map(device => ({
+      return response.data.map(device => ({
         deviceId: device.id,
         deviceName: device.name,
         model: device.model || 'Unknown',
-        firmwareVersion: device.about?.firmware_version || 'Unknown',
+        firmwareVersion: 'Unknown', // Assuming firmware version is not provided in this response
       }));
     } catch (error) {
       this.handleAxiosError(error, 'getDevices');
@@ -332,6 +314,18 @@ export class SleepMeApi {
     } else {
       // Convert from F to C
       return (temp - 32) * 5/9;
+    }
+  }
+
+  // Add the missing mapHomeKitStateToSleepMe method
+  private mapHomeKitStateToSleepMe(state: number): string {
+    switch (state) {
+      case 1: // Assuming 1 represents HEAT
+        return 'heating';
+      case 2: // Assuming 2 represents COOL
+        return 'cooling';
+      default:
+        return 'off';
     }
   }
 }
