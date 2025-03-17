@@ -1,9 +1,7 @@
 const { FlatCompat } = require('@eslint/eslintrc');
-const { configs } = require('@eslint/eslintrc');
 const compat = new FlatCompat({
     baseDirectory: __dirname,
     resolvePluginsRelativeTo: __dirname,
-    recommendedConfig: configs.recommended,
 });
 
 module.exports = [
