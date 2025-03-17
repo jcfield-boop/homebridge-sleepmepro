@@ -1,7 +1,12 @@
-const eslintRecommended = require('eslint/conf/eslint-recommended').default;
-const tsRecommended = require('@typescript-eslint/eslint-plugin/dist/configs/recommended');
+const { FlatCompat } = require('eslint/use-at-your-own-risk');
+const compat = new FlatCompat({
+    baseDirectory: __dirname,
+    resolvePluginsRelativeTo: __dirname,
+});
 
 module.exports = [
+  ...compat.extends('eslint:recommended'),
+  ...compat.extends('plugin:@typescript-eslint/recommended'),
   {
     files: ['src/temp/**/*.ts'],
     languageOptions: {
@@ -10,7 +15,5 @@ module.exports = [
     plugins: {
       '@typescript-eslint': require('@typescript-eslint/eslint-plugin'),
     },
-    ...eslintRecommended,
-    ...tsRecommended,
   },
 ];
