@@ -1,5 +1,5 @@
 const { FlatCompat } = require('@eslint/eslintrc');
-const { configs } = require('@eslint/eslintrc');
+const { configs } = require('@eslint/js');
 const compat = new FlatCompat({
     baseDirectory: __dirname,
     resolvePluginsRelativeTo: __dirname,
