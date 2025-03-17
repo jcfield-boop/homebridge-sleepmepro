@@ -37,34 +37,39 @@ export class SleepMePlatform implements DynamicPlatformPlugin {
   }
 
   async discoverDevices() {
+    this.log.info('Starting device discovery...'); // Add this line
     try {
-      if (this.verbose) {
-        this.log.debug('Discovering SleepMe devices...');
-      }
-
-      const devices = await this.apiService.getDevices();
-
-      if (this.verbose) {
-        this.log.debug('Found SleepMe devices:', devices);
-      }
-
-      for (const device of devices) {
-        const uuid = this.api.hap.uuid.generate(device.deviceId);
-        const existingAccessory = this.accessories.find(accessory => accessory.UUID === uuid);
-
-        if (existingAccessory) {
-          this.log.info('Restoring existing accessory from cache:', existingAccessory.displayName);
-          new SleepMePlatformAccessory(this, existingAccessory, this.apiService);
-        } else {
-          this.log.info('Adding new accessory:', device.deviceName);
-          const accessory = new this.api.platformAccessory(device.deviceName, uuid);
-          accessory.context.device = device;
-          new SleepMePlatformAccessory(this, accessory, this.apiService);
-          this.api.registerPlatformAccessories('homebridge-sleepmepro', 'SleepMePlatform', [accessory]);
+        if (this.verbose) {
+            this.log.debug('Discovering SleepMe devices...');
         }
-      }
+
+        const devices = await this.apiService.getDevices();
+
+        if (this.verbose) {
+            this.log.debug('Found SleepMe devices:', devices);
+        }
+
+        this.log.info('Devices found:', devices.length); // Add this line
+
+        for (const device of devices) {
+            const uuid = this.api.hap.uuid.generate(device.deviceId);
+            const existingAccessory = this.accessories.find(accessory => accessory.UUID === uuid);
+
+            if (existingAccessory) {
+                this.log.info('Restoring existing accessory from cache:', existingAccessory.displayName);
+                new SleepMePlatformAccessory(this, existingAccessory, this.apiService);
+            } else {
+                this.log.info('Adding new accessory:', device.deviceName);
+                const accessory = new this.api.platformAccessory(device.deviceName, uuid);
+                accessory.context.device = device;
+                new SleepMePlatformAccessory(this, accessory, this.apiService);
+                this.api.registerPlatformAccessories('homebridge-sleepmepro', 'SleepMePlatform', [accessory]);
+            }
+        }
     } catch (error) {
-      this.log.error('Error discovering devices:', error);
+        this.log.error('Error discovering devices:', error);
     }
+    this.log.info('Device discovery completed.'); // Add this line
+
   }
 }
