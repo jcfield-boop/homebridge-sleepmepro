@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 try {
     require('@typescript-eslint/parser');
     console.log('@typescript-eslint/parser found');
