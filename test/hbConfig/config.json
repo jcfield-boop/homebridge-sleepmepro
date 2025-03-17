@@ -23,7 +23,7 @@
       "debug": false
     },
     {
-      "name": "SleepMePro",
+      "name": "SleepMe System",
       "platform": "SleepMePlatform",
       "apiToken": "YOUR_SLEEPME_API_TOKEN"
     }
