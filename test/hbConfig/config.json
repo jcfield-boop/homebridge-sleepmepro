@@ -25,7 +25,9 @@
     {
       "name": "SleepMe System",
       "platform": "SleepMePlatform",
-      "apiToken": "YOUR_SLEEPME_API_TOKEN"
+      "apiToken": "YOUR_SLEEPME_API_TOKEN",
+      "unit": "F",
+      "verbose": true
     }
   ],
   "accessories": []

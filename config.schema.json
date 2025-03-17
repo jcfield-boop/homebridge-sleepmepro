@@ -42,7 +42,13 @@
               "title": "Custom Name",
               "type": "string",
               "description": "Custom name for this device"
-            }
+            },
+            "verbose": {
+              "type": "boolean",
+              "required": false,
+              "default": false,
+              "description": "Enable verbose logging"
+          }
           }
         }
       }
