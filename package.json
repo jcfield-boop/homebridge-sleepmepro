@@ -1,7 +1,7 @@
 {
   "name": "homebridge-sleepmepro",
   "displayName": "Homebridge SleepMePro",
-  "version": "2.0.20",
+  "version": "2.0.21",
   "type": "module",
   "private": false,
   "description": "Homebridge plugin for SleepMe devices",
