@@ -23,6 +23,10 @@ export interface DeviceSettings {
 
 export class SleepMeApi {
     public readonly baseUrl = 'https://api.developer.sleep.me/v1';
+    private lastRequestTime = 0;
+    private rateLimitResetTime = 0;
+    private requestCount = 0;
+    private readonly MAX_REQUESTS_PER_MINUTE = 8; // Conservative limit to avoid rate limiting
 
     constructor(
         private readonly apiToken: string, 
@@ -41,6 +45,8 @@ export class SleepMeApi {
         try {
             this.log.debug('Getting SleepMe devices...');
             
+            await this.respectRateLimit();
+            
             const response: AxiosResponse = await axios({
                 method: 'GET',
                 url: `${this.baseUrl}/devices`,
@@ -52,6 +58,7 @@ export class SleepMeApi {
                 timeout: 10000 // 10 second timeout
             });
 
+            this.trackRequest();
             this.log.debug(`API Response Status: ${response.status}`);
             
             // Handle possible response formats
@@ -97,6 +104,8 @@ export class SleepMeApi {
         try {
             this.log.debug(`Getting status for device ${deviceId}...`);
             
+            await this.respectRateLimit();
+            
             const response: AxiosResponse = await axios({
                 method: 'GET',
                 url: `${this.baseUrl}/devices/${deviceId}`,
@@ -108,6 +117,7 @@ export class SleepMeApi {
                 timeout: 10000 // 10 second timeout
             });
             
+            this.trackRequest();
             this.log.debug(`API Response Status: ${response.status} for device ${deviceId}`);
             
             if (!response.data) {
@@ -117,10 +127,16 @@ export class SleepMeApi {
             
             // Extract the relevant fields we need
             const deviceStatus: DeviceStatus = {
-                "control.target_temperature_c": this.extractNestedValue(response.data, 'control.set_temperature_c') || 
-                                              this.extractNestedValue(response.data, 'control.target_temperature_c') || 21,
-                "control.current_temperature_c": this.extractNestedValue(response.data, 'status.water_temperature_c') || 
-                                               this.extractNestedValue(response.data, 'control.current_temperature_c') || 21,
+                "control.target_temperature_c": this.ensureValidTemperature(
+                    this.extractNestedValue(response.data, 'control.set_temperature_c') || 
+                    this.extractNestedValue(response.data, 'control.target_temperature_c') || 
+                    21
+                ),
+                "control.current_temperature_c": this.ensureValidTemperature(
+                    this.extractNestedValue(response.data, 'status.water_temperature_c') || 
+                    this.extractNestedValue(response.data, 'control.current_temperature_c') || 
+                    21
+                ),
                 "control.thermal_control_status": this.extractNestedValue(response.data, 'control.thermal_control_status')
             };
             
@@ -142,8 +158,15 @@ export class SleepMeApi {
             return false;
         }
 
+        // Validate temperature settings
+        if (settings["control.set_temperature_c"] !== undefined) {
+            settings["control.set_temperature_c"] = this.ensureValidTemperature(settings["control.set_temperature_c"]);
+        }
+
         try {
             this.log.debug(`Setting settings for device ${deviceId}: ${JSON.stringify(settings)}`);
+            
+            await this.respectRateLimit();
             
             const response = await axios({
                 method: 'PATCH',
@@ -156,6 +179,7 @@ export class SleepMeApi {
                 timeout: 10000 // 10 second timeout
             });
             
+            this.trackRequest();
             this.log.debug(`API Response Status: ${response.status} for updating device ${deviceId}`);
             this.log.info(`Successfully updated settings for device ${deviceId}`);
             return true;
@@ -191,6 +215,80 @@ export class SleepMeApi {
     }
 
     /**
+     * Ensure temperature values are within valid ranges
+     * SleepMe devices typically operate between 13°C-46°C
+     */
+    private ensureValidTemperature(temp: number): number {
+        const MIN_TEMP = 13; // 55°F in Celsius
+        const MAX_TEMP = 46; // 115°F in Celsius
+        
+        if (typeof temp !== 'number' || isNaN(temp)) {
+            this.log.warn(`Invalid temperature value: ${temp}, using default of 21°C`);
+            return 21;
+        }
+        
+        if (temp < MIN_TEMP) {
+            this.log.warn(`Temperature value ${temp}°C below minimum, using ${MIN_TEMP}°C`);
+            return MIN_TEMP;
+        }
+        
+        if (temp > MAX_TEMP) {
+            this.log.warn(`Temperature value ${temp}°C above maximum, using ${MAX_TEMP}°C`);
+            return MAX_TEMP;
+        }
+        
+        return Math.round(temp * 10) / 10; // Round to 1 decimal place
+    }
+
+    /**
+     * Track API request for rate limiting
+     */
+    private trackRequest(): void {
+        const now = Date.now();
+        const currentMinute = Math.floor(now / 60000);
+        
+        // Reset counter if we're in a new minute
+        if (this.lastRequestTime === 0 || Math.floor(this.lastRequestTime / 60000) < currentMinute) {
+            this.requestCount = 1;
+        } else {
+            this.requestCount++;
+        }
+        
+        this.lastRequestTime = now;
+    }
+
+    /**
+     * Respect rate limits by delaying requests when needed
+     */
+    private async respectRateLimit(): Promise<void> {
+        const now = Date.now();
+        
+        // If we've hit a rate limit, wait until the reset time
+        if (this.rateLimitResetTime > now) {
+            const delay = this.rateLimitResetTime - now;
+            this.log.debug(`Rate limit hit, waiting ${delay}ms before next request`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            this.rateLimitResetTime = 0;
+            this.requestCount = 0;
+            return;
+        }
+        
+        // If we've made too many requests in the current minute, wait until next minute
+        const currentMinute = Math.floor(now / 60000);
+        if (this.lastRequestTime > 0 && 
+            Math.floor(this.lastRequestTime / 60000) === currentMinute &&
+            this.requestCount >= this.MAX_REQUESTS_PER_MINUTE) {
+            
+            const nextMinute = (currentMinute + 1) * 60000;
+            const delay = nextMinute - now + 100; // Add 100ms buffer
+            
+            this.log.debug(`Approaching rate limit, waiting ${delay}ms before next request`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            this.requestCount = 0;
+        }
+    }
+
+    /**
      * Standardized error handling for API calls
      */
     private handleApiError(method: string, error: unknown): void {
@@ -204,10 +302,15 @@ export class SleepMeApi {
                     `${JSON.stringify(axiosError.response.data)}`
                 );
                 
+                // Handle specific error codes
                 if (axiosError.response.status === 401) {
                     this.log.error('Authentication failed. Please check your API token.');
                 } else if (axiosError.response.status === 404) {
                     this.log.error('Resource not found. Please check if the device ID is correct.');
+                } else if (axiosError.response.status === 429) {
+                    // Rate limit hit, set a reset time 60 seconds in the future
+                    this.rateLimitResetTime = Date.now() + 60000;
+                    this.log.warn(`Rate limit exceeded. Pausing requests for 60 seconds.`);
                 }
                 
             } else if (axiosError.request) {
