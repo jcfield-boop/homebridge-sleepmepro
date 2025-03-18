@@ -11,15 +11,8 @@ export interface DeviceStatus {
     "control.target_temperature_c": number;
     "control.current_temperature_c": number;
     "control.thermal_control_status"?: string;
-    "control.power"?: string;
     "status.humidity"?: number;
     "about.firmware_version"?: string;
-}
-
-export interface DeviceSettings {
-    "control.set_temperature_c"?: number;
-    "control.thermal_control_status"?: string;
-    "control.power"?: string;
 }
 
 // Static rate limiting variables shared across instances
@@ -142,16 +135,18 @@ export class SleepMeApi {
                 const deviceStatus: DeviceStatus = {
                     "control.target_temperature_c": this.ensureValidTemperature(
                         this.extractNestedValue(response.data, 'control.set_temperature_c') || 
-                        this.extractNestedValue(response.data, 'control.target_temperature_c') || 
+                        this.extractNestedValue(response.data, 'set_temperature_c') ||
+                        this.convertFtoC(this.extractNestedValue(response.data, 'set_temperature_f')) ||
                         21
                     ),
                     "control.current_temperature_c": this.ensureValidTemperature(
                         this.extractNestedValue(response.data, 'status.water_temperature_c') || 
-                        this.extractNestedValue(response.data, 'control.current_temperature_c') || 
+                        this.extractNestedValue(response.data, 'water_temperature_c') ||
+                        this.convertFtoC(this.extractNestedValue(response.data, 'water_temperature_f')) ||
                         21
                     ),
-                    "control.thermal_control_status": this.extractNestedValue(response.data, 'control.thermal_control_status'),
-                    "control.power": this.extractNestedValue(response.data, 'control.power')
+                    "control.thermal_control_status": this.extractNestedValue(response.data, 'thermal_control_status') ||
+                                                     this.extractNestedValue(response.data, 'control.thermal_control_status')
                 };
                 
                 // Extract humidity if available
@@ -163,7 +158,8 @@ export class SleepMeApi {
                 }
                 
                 // Extract firmware version if available
-                const firmwareVersion = this.extractNestedValue(response.data, 'about.firmware_version');
+                const firmwareVersion = this.extractNestedValue(response.data, 'about.firmware_version') ||
+                                       this.extractNestedValue(response.data, 'firmware_version');
                 if (firmwareVersion) {
                     deviceStatus["about.firmware_version"] = firmwareVersion;
                 }
@@ -178,17 +174,97 @@ export class SleepMeApi {
     }
 
     /**
+     * Turn device on by setting thermal_control_status to "active"
+     * According to observed API behavior
+     */
+    async turnDeviceOn(deviceId: string, temperature?: number): Promise<boolean> {
+        try {
+            // First get current temperature if none provided
+            if (temperature === undefined) {
+                const status = await this.getDeviceStatus(deviceId);
+                if (status && status["control.target_temperature_c"]) {
+                    temperature = status["control.target_temperature_c"];
+                } else {
+                    this.log.debug(`[API] No current temperature available, using default of 21°C`);
+                    temperature = 21;
+                }
+            }
+            
+            // Validate temperature
+            const validTemp = this.ensureValidTemperature(temperature);
+            
+            this.log.info(`[API] Turning device ${deviceId} ON with temperature ${validTemp}°C`);
+            
+            // Create payload according to observed API behavior
+            const payload = {
+                "set_temperature_c": validTemp,
+                "thermal_control_status": "active"
+            };
+            
+            // Set the device state
+            return await this.updateDeviceSettings(deviceId, payload);
+        } catch (error) {
+            this.handleApiError(`turnDeviceOn(${deviceId})`, error);
+            return false;
+        }
+    }
+
+    /**
+     * Turn device off by setting thermal_control_status to "standby"
+     * According to observed API behavior
+     */
+    async turnDeviceOff(deviceId: string): Promise<boolean> {
+        try {
+            this.log.info(`[API] Turning device ${deviceId} OFF`);
+            
+            // Create payload according to observed API behavior
+            const payload = {
+                "thermal_control_status": "standby"
+            };
+            
+            // Set the device state
+            return await this.updateDeviceSettings(deviceId, payload);
+        } catch (error) {
+            this.handleApiError(`turnDeviceOff(${deviceId})`, error);
+            return false;
+        }
+    }
+
+    /**
+     * Set temperature only (device must already be on)
+     */
+    async setTemperature(deviceId: string, temperature: number): Promise<boolean> {
+        try {
+            // Validate temperature
+            const validTemp = this.ensureValidTemperature(temperature);
+            
+            this.log.info(`[API] Setting device ${deviceId} temperature to ${validTemp}°C`);
+            
+            // Create payload according to observed API behavior
+            const payload = {
+                "set_temperature_c": validTemp
+            };
+            
+            // Update device settings
+            return await this.updateDeviceSettings(deviceId, payload);
+        } catch (error) {
+            this.handleApiError(`setTemperature(${deviceId})`, error);
+            return false;
+        }
+    }
+
+    /**
      * Update device settings using a PATCH request
      * This is the core method for controlling a device
      */
-    async setDeviceSettings(deviceId: string, settings: Record<string, any>): Promise<boolean> {
+    async updateDeviceSettings(deviceId: string, settings: Record<string, any>): Promise<boolean> {
         if (!deviceId) {
-            this.log.error('[API] setDeviceSettings called with undefined deviceId');
+            this.log.error('[API] updateDeviceSettings called with undefined deviceId');
             return false;
         }
         
         if (!settings || Object.keys(settings).length === 0) {
-            this.log.error('[API] setDeviceSettings called with empty settings');
+            this.log.error('[API] updateDeviceSettings called with empty settings');
             return false;
         }
         
@@ -232,88 +308,20 @@ export class SleepMeApi {
             
             return success;
         } catch (error) {
-            this.handleApiError(`setDeviceSettings(${deviceId})`, error);
+            this.handleApiError(`updateDeviceSettings(${deviceId})`, error);
             return false;
         }
     }
 
     /**
-     * Turn device on with specified temperature
-     * According to API documentation at: https://docs.developer.sleep.me/api/
+     * Convert temperature from Fahrenheit to Celsius
      */
-    async turnDeviceOn(deviceId: string, temperature?: number): Promise<boolean> {
-        try {
-            // First get current status to determine current temperature if none provided
-            if (temperature === undefined) {
-                const status = await this.getDeviceStatus(deviceId);
-                if (status && status["control.target_temperature_c"]) {
-                    temperature = status["control.target_temperature_c"];
-                } else {
-                    this.log.debug(`[API] No current temperature available, using default of 21°C`);
-                    temperature = 21;
-                }
-            }
-            
-            // Validate temperature
-            const validTemp = this.ensureValidTemperature(temperature);
-            
-            this.log.info(`[API] Turning device ${deviceId} ON with temperature ${validTemp}°C`);
-            
-            // Create payload according to documentation
-            const settings = {
-                "brightness_level": 100, // Set display brightness to max
-                "control.power": "on",   // Power ON
-                "control.set_temperature_c": validTemp // Set temperature
-            };
-            
-            return await this.setDeviceSettings(deviceId, settings);
-        } catch (error) {
-            this.handleApiError(`turnDeviceOn(${deviceId})`, error);
-            return false;
+    private convertFtoC(tempF: number | undefined): number | undefined {
+        if (tempF === undefined || typeof tempF !== 'number') {
+            return undefined;
         }
-    }
-
-    /**
-     * Turn device off
-     * According to API documentation at: https://docs.developer.sleep.me/api/
-     */
-    async turnDeviceOff(deviceId: string): Promise<boolean> {
-        try {
-            this.log.info(`[API] Turning device ${deviceId} OFF`);
-            
-            // Create payload according to documentation
-            const settings = {
-                "control.power": "off" // Power OFF
-            };
-            
-            return await this.setDeviceSettings(deviceId, settings);
-        } catch (error) {
-            this.handleApiError(`turnDeviceOff(${deviceId})`, error);
-            return false;
-        }
-    }
-
-    /**
-     * Set temperature only (device must already be on)
-     * According to API documentation at: https://docs.developer.sleep.me/api/
-     */
-    async setTemperature(deviceId: string, temperature: number): Promise<boolean> {
-        try {
-            // Validate temperature
-            const validTemp = this.ensureValidTemperature(temperature);
-            
-            this.log.info(`[API] Setting device ${deviceId} temperature to ${validTemp}°C`);
-            
-            // Create payload according to documentation
-            const settings = {
-                "control.set_temperature_c": validTemp // Set temperature
-            };
-            
-            return await this.setDeviceSettings(deviceId, settings);
-        } catch (error) {
-            this.handleApiError(`setTemperature(${deviceId})`, error);
-            return false;
-        }
+        
+        return (tempF - 32) * 5/9;
     }
 
     /**
@@ -331,7 +339,7 @@ export class SleepMeApi {
                         ? JSON.stringify(response.data)
                         : String(response.data);
                     this.log.error(`${logPrefix} Response data: ${dataStr}`);
-                } catch (e) {
+                } catch {
                     this.log.error(`${logPrefix} Response data available but could not stringify`);
                 }
             }
@@ -397,7 +405,7 @@ export class SleepMeApi {
      */
     private extractNestedValue(data: any, path: string): any {
         // First check if the property exists directly (flattened format)
-        if (data[path] !== undefined) {
+        if (data && data[path] !== undefined) {
             return data[path];
         }
         
@@ -410,13 +418,13 @@ export class SleepMeApi {
                 current = current[part];
             } else {
                 // For special cases like status.humidity check specific object structures
-                if (parts[0] === 'status' && parts.length === 2 && data.status && data.status[parts[1]] !== undefined) {
+                if (parts[0] === 'status' && parts.length === 2 && data && data.status && data.status[parts[1]] !== undefined) {
                     return data.status[parts[1]];
                 }
-                if (parts[0] === 'control' && parts.length === 2 && data.control && data.control[parts[1]] !== undefined) {
+                if (parts[0] === 'control' && parts.length === 2 && data && data.control && data.control[parts[1]] !== undefined) {
                     return data.control[parts[1]];
                 }
-                if (parts[0] === 'about' && parts.length === 2 && data.about && data.about[parts[1]] !== undefined) {
+                if (parts[0] === 'about' && parts.length === 2 && data && data.about && data.about[parts[1]] !== undefined) {
                     return data.about[parts[1]];
                 }
                 return undefined;
