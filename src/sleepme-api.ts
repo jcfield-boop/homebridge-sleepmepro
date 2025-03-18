@@ -197,7 +197,6 @@ export class SleepMeApi {
 
     /**
      * Turn device on by setting thermal_control_status to "active"
-     * According to observed API behavior
      */
     async turnDeviceOn(deviceId: string, temperature?: number): Promise<boolean> {
         try {
@@ -217,9 +216,10 @@ export class SleepMeApi {
             
             this.log.info(`[API] Turning device ${deviceId} ON with temperature ${validTemp}°C`);
             
-            // Create payload according to observed API behavior
+            // Create payload based on Postman example format
             const payload = {
                 "set_temperature_c": validTemp,
+                "set_temperature_f": this.convertCtoF(validTemp), // Include Fahrenheit for compatibility
                 "thermal_control_status": "active"
             };
             
@@ -233,13 +233,12 @@ export class SleepMeApi {
 
     /**
      * Turn device off by setting thermal_control_status to "standby"
-     * According to observed API behavior
      */
     async turnDeviceOff(deviceId: string): Promise<boolean> {
         try {
             this.log.info(`[API] Turning device ${deviceId} OFF`);
             
-            // Create payload according to observed API behavior
+            // Create payload according to Postman example format
             const payload = {
                 "thermal_control_status": "standby"
             };
@@ -262,9 +261,10 @@ export class SleepMeApi {
             
             this.log.info(`[API] Setting device ${deviceId} temperature to ${validTemp}°C`);
             
-            // Create payload according to observed API behavior
+            // Create payload including both C and F temperature values for compatibility
             const payload = {
-                "set_temperature_c": validTemp
+                "set_temperature_c": validTemp,
+                "set_temperature_f": this.convertCtoF(validTemp)
             };
             
             // Update device settings
@@ -294,50 +294,41 @@ export class SleepMeApi {
         try {
             this.log.info(`[API] Setting device ${deviceId} settings: ${JSON.stringify(settings)}`);
             
-            // Transform dot notation keys into nested objects if needed
-            const payload: Record<string, any> = {};
+            // Prepare a flat payload - convert any dot notation keys to simple property names
+            const flatPayload: Record<string, any> = {};
+            
             for (const [key, value] of Object.entries(settings)) {
                 if (key.includes('.')) {
-                    // Handle dot notation (e.g., "control.set_temperature_c")
-                    const [section, property] = key.split('.');
-                    if (!payload[section]) {
-                        payload[section] = {};
+                    // For keys like "control.set_temperature_c", extract just "set_temperature_c"
+                    const parts = key.split('.');
+                    if (parts.length === 2) {
+                        flatPayload[parts[1]] = value;
+                        
+                        // Special case for temperature - provide both C and F for compatibility
+                        if (parts[1] === 'set_temperature_c' && typeof value === 'number') {
+                            flatPayload['set_temperature_f'] = this.convertCtoF(value);
+                        } else if (parts[1] === 'set_temperature_f' && typeof value === 'number') {
+                            flatPayload['set_temperature_c'] = this.convertFtoC(value);
+                        }
                     }
-                    payload[section][property] = value;
                 } else {
-                    // Regular keys
-                    payload[key] = value;
+                    // Keep keys that are already flat
+                    flatPayload[key] = value;
+                    
+                    // Special case for temperature - provide both C and F for compatibility
+                    if (key === 'set_temperature_c' && typeof value === 'number') {
+                        flatPayload['set_temperature_f'] = this.convertCtoF(value);
+                    } else if (key === 'set_temperature_f' && typeof value === 'number') {
+                        flatPayload['set_temperature_c'] = this.convertFtoC(value);
+                    }
                 }
             }
             
-            const success = await this.queueRequest(async () => {
-                this.log.debug(`[API] Sending PATCH request to /devices/${deviceId}`);
-                const response = await axios({
-                    method: 'PATCH',
-                    url: `${this.baseUrl}/devices/${deviceId}`,
-                    headers: {
-                        'Authorization': `Bearer ${this.apiToken}`,
-                        'Content-Type': 'application/json',
-                    },
-                    data: payload,
-                    timeout: 10000
-                });
-                
-                this.logApiResponse('PATCH', `/devices/${deviceId}`, response);
-                
-                if (response.data && this.verbose) {
-                    this.log.debug(`[API] Response data: ${JSON.stringify(response.data)}`);
-                }
-                
-                return response.status >= 200 && response.status < 300;
-            });
+            // Log the transformed payload for debugging
+            this.log.debug(`[API] Transformed payload: ${JSON.stringify(flatPayload)}`);
             
-            // If successful, log and optionally verify the changes
-            if (success) {
-                this.log.info(`[API] Successfully updated device ${deviceId} settings`);
-            }
-            
-            return success;
+            // Send the flat payload to the API
+            return await this.updateDeviceSettings(deviceId, flatPayload);
         } catch (error) {
             this.handleApiError(`setDeviceSettings(${deviceId})`, error);
             return false;
@@ -360,24 +351,31 @@ export class SleepMeApi {
         }
         
         try {
-            this.log.info(`[API] Setting device ${deviceId} settings: ${JSON.stringify(settings)}`);
+            this.log.info(`[API] Updating device ${deviceId} settings: ${JSON.stringify(settings)}`);
             
             const success = await this.queueRequest(async () => {
                 this.log.debug(`[API] Sending PATCH request to /devices/${deviceId}`);
+                
+                // Log the exact request we're sending, including headers
+                this.log.debug(`[API] Request headers: Authorization: Bearer ${this.apiToken.substring(0, 5)}..., Content-Type: application/json`);
+                this.log.debug(`[API] Request payload: ${JSON.stringify(settings)}`);
+                
                 const response = await axios({
                     method: 'PATCH',
                     url: `${this.baseUrl}/devices/${deviceId}`,
                     headers: {
                         'Authorization': `Bearer ${this.apiToken}`,
                         'Content-Type': 'application/json',
+                        'Accept': 'application/json'
                     },
                     data: settings,
                     timeout: 10000
                 });
                 
+                // Log the full response details for debugging
                 this.logApiResponse('PATCH', `/devices/${deviceId}`, response);
                 
-                if (response.data && this.verbose) {
+                if (response.data) {
                     this.log.debug(`[API] Response data: ${JSON.stringify(response.data)}`);
                 }
                 
@@ -388,13 +386,36 @@ export class SleepMeApi {
             if (success) {
                 this.log.info(`[API] Successfully updated device ${deviceId} settings`);
                 
-                // Get updated device status for verification (if verbose logging)
-                if (this.verbose) {
-                    // Add a small delay to allow the device to update
-                    await new Promise(resolve => setTimeout(resolve, 1000));
-                    const updatedStatus = await this.getDeviceStatus(deviceId);
-                    this.log.debug(`[API] Updated device status: ${JSON.stringify(updatedStatus)}`);
+                // Get updated device status for verification
+                // Add a small delay to allow the device to update
+                await new Promise(resolve => setTimeout(resolve, 1500));
+                const updatedStatus = await this.getDeviceStatus(deviceId);
+                this.log.debug(`[API] Device status after update: ${JSON.stringify(updatedStatus)}`);
+                
+                // Check if the update was actually applied by comparing values
+                if (updatedStatus) {
+                    // Check if thermal control status was updated
+                    if (settings.thermal_control_status) {
+                        const newStatus = updatedStatus["control.thermal_control_status"];
+                        if (newStatus !== settings.thermal_control_status) {
+                            this.log.warn(`[API] Thermal status may not have updated correctly. Expected: ${settings.thermal_control_status}, Got: ${newStatus}`);
+                        } else {
+                            this.log.debug(`[API] Thermal status updated correctly to: ${newStatus}`);
+                        }
+                    }
+                    
+                    // Check if temperature was updated
+                    if (settings.set_temperature_c) {
+                        const newTemp = updatedStatus["control.target_temperature_c"];
+                        if (newTemp !== settings.set_temperature_c) {
+                            this.log.warn(`[API] Temperature may not have updated correctly. Expected: ${settings.set_temperature_c}°C, Got: ${newTemp}°C`);
+                        } else {
+                            this.log.debug(`[API] Temperature updated correctly to: ${newTemp}°C`);
+                        }
+                    }
                 }
+            } else {
+                this.log.error(`[API] Failed to update settings for device ${deviceId}`);
             }
             
             return success;
@@ -416,12 +437,26 @@ export class SleepMeApi {
     }
 
     /**
+     * Convert temperature from Celsius to Fahrenheit
+     */
+    private convertCtoF(tempC: number): number {
+        return (tempC * 9/5) + 32;
+    }
+
+    /**
      * Log API response for debugging
      */
     private logApiResponse(method: string, url: string, response: AxiosResponse): void {
         const logPrefix = '[API]';
+        
+        // Log basic info for all responses
+        this.log.debug(`${logPrefix} ${method} ${url} - Status: ${response.status} ${response.statusText}`);
+        
+        // Log headers for debugging
+        this.log.debug(`${logPrefix} Response headers: ${JSON.stringify(response.headers)}`);
+        
         if (response.status >= 400) {
-            this.log.error(`${logPrefix} ${method} ${url} - Status: ${response.status}`);
+            this.log.error(`${logPrefix} ${method} ${url} - Error Status: ${response.status} ${response.statusText}`);
             
             // Include response data for error debugging
             if (response.data) {
@@ -429,13 +464,23 @@ export class SleepMeApi {
                     const dataStr = typeof response.data === 'object' 
                         ? JSON.stringify(response.data)
                         : String(response.data);
-                    this.log.error(`${logPrefix} Response data: ${dataStr}`);
+                    this.log.error(`${logPrefix} Error response data: ${dataStr}`);
                 } catch {
-                    this.log.error(`${logPrefix} Response data available but could not stringify`);
+                    this.log.error(`${logPrefix} Error response data available but could not stringify`);
                 }
             }
         } else {
-            this.log.debug(`${logPrefix} ${method} ${url} - Status: ${response.status}`);
+            // Success case
+            if (this.verbose && response.data) {
+                try {
+                    const dataStr = typeof response.data === 'object' 
+                        ? JSON.stringify(response.data)
+                        : String(response.data);
+                    this.log.debug(`${logPrefix} Response data: ${dataStr}`);
+                } catch {
+                    // Do nothing for non-verbose mode
+                }
+            }
         }
     }
 
@@ -597,6 +642,7 @@ export class SleepMeApi {
         
         // Set rate limit cooldown for 60 seconds
         rateLimitResetTime = Date.now() + 60000;
+        
         this.log.warn(
             `[API] Rate limit hit! Increasing delay to ${minRequestDelay}ms ` +
             `and pausing requests for 60 seconds.`
@@ -652,8 +698,16 @@ export class SleepMeApi {
                 // Server responded with error status
                 this.log.error(
                     `[API] Error in ${method}: Status ${axiosError.response.status} - ` +
-                    `${JSON.stringify(axiosError.response.data)}`
+                    `${JSON.stringify(axiosError.response.data || {})}`
                 );
+                
+                // Log complete error details for troubleshooting
+                this.log.debug(`[API] Error details: ${JSON.stringify({
+                    status: axiosError.response.status,
+                    statusText: axiosError.response.statusText,
+                    headers: axiosError.response.headers,
+                    data: axiosError.response.data || {}
+                })}`);
                 
                 // Handle specific error codes
                 if (axiosError.response.status === 401) {
@@ -672,13 +726,29 @@ export class SleepMeApi {
                 );
                 this.log.error('[API] Please check your network connection and API endpoint.');
                 
+                // Log request details for troubleshooting
+                if (axiosError.config) {
+                    this.log.debug(`[API] Request details: ${JSON.stringify({
+                        method: axiosError.config.method,
+                        url: axiosError.config.url,
+                        headers: axiosError.config.headers,
+                        data: axiosError.config.data
+                    })}`);
+                }
+                
             } else {
                 // Error setting up the request
                 this.log.error(`[API] Error in ${method}: ${axiosError.message}`);
+                
+                // Log any additional information
+                if (axiosError.config) {
+                    this.log.debug(`[API] Request configuration: ${JSON.stringify(axiosError.config)}`);
+                }
             }
             
         } else if (error instanceof Error) {
             this.log.error(`[API] Error in ${method}: ${error.message}`);
+            this.log.debug(`[API] Error stack: ${error.stack}`);
             
         } else {
             this.log.error(`[API] Unknown error in ${method}: ${error}`);
