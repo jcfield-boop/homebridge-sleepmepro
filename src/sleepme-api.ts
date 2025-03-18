@@ -11,6 +11,7 @@ export interface DeviceStatus {
     "control.target_temperature_c": number;
     "control.current_temperature_c": number;
     "control.thermal_control_status"?: string;
+    "status.humidity"?: number; // Added humidity field
 }
 
 export interface DeviceSettings {
@@ -137,6 +138,14 @@ export class SleepMeApi {
                     ),
                     "control.thermal_control_status": this.extractNestedValue(response.data, 'control.thermal_control_status')
                 };
+                
+                // Extract humidity if available
+                const humidity = this.extractNestedValue(response.data, 'status.humidity') || 
+                                this.extractNestedValue(response.data, 'humidity');
+                                
+                if (humidity !== undefined && typeof humidity === 'number') {
+                    deviceStatus["status.humidity"] = Math.min(100, Math.max(0, Math.round(humidity)));
+                }
                 
                 this.log.debug(`Parsed device status: ${JSON.stringify(deviceStatus)}`);
                 return deviceStatus;
@@ -287,8 +296,8 @@ export class SleepMeApi {
      */
     private async queueRequest<T>(requestFn: () => Promise<T>): Promise<T> {
         // Create a properly typed Promise that will contain our result
-        let resolvePromise: (value: T) => void;
-        let rejectPromise: (reason: any) => void;
+        let resolvePromise!: (value: T) => void;
+        let rejectPromise!: (reason: any) => void;
         
         const resultPromise = new Promise<T>((resolve, reject) => {
             resolvePromise = resolve;
@@ -341,6 +350,11 @@ export class SleepMeApi {
         // First check if the property exists directly (flattened format)
         if (data[path] !== undefined) {
             return data[path];
+        }
+        
+        // Special case for status.humidity
+        if (path === "status.humidity" && data.status && data.status.humidity !== undefined) {
+            return data.status.humidity;
         }
         
         // Then try to traverse the nested path

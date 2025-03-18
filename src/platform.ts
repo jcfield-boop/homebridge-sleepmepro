@@ -9,7 +9,9 @@ import {
 } from 'homebridge';
 
 import { SleepMePlatformAccessory } from './platformAccessory.js';
+import { HumidityAccessory } from './humidity-accessory.js';
 import { SleepMeApi } from './sleepme-api.js';
+import { SchedulerService } from './scheduler/index.js';
 
 export interface Device {
   id: string;
@@ -25,12 +27,19 @@ export class SleepMePlatform implements DynamicPlatformPlugin {
   public readonly Service: typeof Service = this.api.hap.Service;
   public readonly Characteristic: typeof Characteristic = this.api.hap.Characteristic;
 
-  // this is used to track restored cached accessories
+  // Used to track restored cached accessories
   public readonly accessories: PlatformAccessory[] = [];
   
-  // Initialize with default values to fix linting errors
+  // API service
   public readonly apiService: SleepMeApi;
+  
+  // Scheduler service
+  private scheduler?: SchedulerService;
+  
+  // Configuration options
   public readonly verbose: boolean;
+  public readonly enableHumidity: boolean;
+  public readonly enableScheduling: boolean;
 
   constructor(
     public readonly log: Logger,
@@ -45,11 +54,19 @@ export class SleepMePlatform implements DynamicPlatformPlugin {
       this.log
     );
     this.verbose = this.config.verbose === true;
+    this.enableHumidity = this.config.enableHumidity === true;
+    this.enableScheduling = this.config.enableScheduling === true;
 
     // Check for configuration errors
     if (!this.config.apiToken) {
       this.log.error('API Token is missing from configuration! Please add it to your config.json.');
       return;
+    }
+
+    // Create scheduler if enabled
+    if (this.enableScheduling) {
+      this.scheduler = new SchedulerService(this.config, this.apiService, this.log);
+      this.log.info('Scheduler service created');
     }
 
     // When this event is fired, homebridge has restored all cached accessories from disk.
@@ -59,6 +76,14 @@ export class SleepMePlatform implements DynamicPlatformPlugin {
       this.log.info('Executed didFinishLaunching callback');
       // run the method to discover / register your devices as accessories
       this.discoverDevices();
+    });
+    
+    // Handle shutdown
+    this.api.on('shutdown', () => {
+      this.log.info('Shutting down SleepMePlatform...');
+      if (this.scheduler) {
+        this.scheduler.shutdown();
+      }
     });
   }
 
@@ -107,6 +132,9 @@ export class SleepMePlatform implements DynamicPlatformPlugin {
         }
       });
 
+      // Store map of device IDs to names for scheduler
+      const deviceMap = new Map<string, string>();
+
       // Track which accessories are still in use
       const activeAccessories = new Set<string>();
 
@@ -126,6 +154,10 @@ export class SleepMePlatform implements DynamicPlatformPlugin {
           }
         }
 
+        // Store device name for scheduler
+        deviceMap.set(device.id, customName);
+
+        // Create thermostat accessory
         const uuid = this.api.hap.uuid.generate(device.id);
         activeAccessories.add(device.id);
 
@@ -156,13 +188,66 @@ export class SleepMePlatform implements DynamicPlatformPlugin {
           // Register the accessory
           this.api.registerPlatformAccessories('homebridge-sleepmepro', 'SleepMePlatform', [accessory]);
         }
+
+        // Create humidity accessory if enabled
+        if (this.enableHumidity) {
+          const humidityUuid = this.api.hap.uuid.generate(`${device.id}-humidity`);
+          const humidityName = `${customName} Humidity`;
+          
+          // Check if a humidity accessory already exists
+          const existingHumidityAccessory = this.accessories.find(accessory => 
+            accessory.UUID === humidityUuid);
+          
+          if (existingHumidityAccessory) {
+            this.log.info(`Restoring humidity accessory from cache: ${existingHumidityAccessory.displayName}`);
+            
+            // Update context
+            existingHumidityAccessory.context.device = device;
+            existingHumidityAccessory.displayName = humidityName;
+            
+            this.api.updatePlatformAccessories([existingHumidityAccessory]);
+            new HumidityAccessory(this, existingHumidityAccessory, this.apiService);
+            
+            // Mark as active
+            activeAccessories.add(`${device.id}-humidity`);
+          } else {
+            this.log.info(`Adding new humidity accessory: ${humidityName}`);
+            const humidityAccessory = new this.api.platformAccessory(humidityName, humidityUuid);
+            
+            // Store device info in context
+            humidityAccessory.context.device = device;
+            
+            // Create the accessory handler
+            new HumidityAccessory(this, humidityAccessory, this.apiService);
+            
+            // Register the accessory
+            this.api.registerPlatformAccessories('homebridge-sleepmepro', 'SleepMePlatform', [humidityAccessory]);
+            
+            // Mark as active
+            activeAccessories.add(`${device.id}-humidity`);
+          }
+        }
+      }
+
+      // Initialize scheduler if enabled
+      if (this.enableScheduling && this.scheduler && deviceMap.size > 0) {
+        this.log.info('Initializing scheduler with discovered devices');
+        this.scheduler.initialize(deviceMap);
       }
 
       // Remove accessories that no longer exist
       for (const accessory of this.accessories) {
-        if (accessory.context.device && accessory.context.device.id && !activeAccessories.has(accessory.context.device.id)) {
-          this.log.info(`Removing accessory no longer found: ${accessory.displayName}`);
-          this.api.unregisterPlatformAccessories('homebridge-sleepmepro', 'SleepMePlatform', [accessory]);
+        if (accessory.context.device && accessory.context.device.id) {
+          const accessoryId = accessory.context.device.id;
+          const isHumidity = accessory.UUID.includes('-humidity');
+          
+          // For humidity accessories, check the combined ID
+          const activeId = isHumidity ? `${accessoryId}-humidity` : accessoryId;
+          
+          if (!activeAccessories.has(activeId)) {
+            this.log.info(`Removing accessory no longer found: ${accessory.displayName}`);
+            this.api.unregisterPlatformAccessories('homebridge-sleepmepro', 'SleepMePlatform', [accessory]);
+          }
         }
       }
 

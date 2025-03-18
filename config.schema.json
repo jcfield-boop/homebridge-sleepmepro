@@ -26,6 +26,18 @@
         "enumNames": ["Celsius (°C)", "Fahrenheit (°F)"],
         "description": "Select temperature unit"
       },
+      "enableHumidity": {
+        "title": "Enable Humidity Sensor",
+        "type": "boolean",
+        "default": false,
+        "description": "Create a separate humidity sensor accessory for each device"
+      },
+      "enableScheduling": {
+        "title": "Enable Scheduling",
+        "type": "boolean",
+        "default": false,
+        "description": "Enable temperature schedules and warm awake features"
+      },
       "devices": {
         "type": "array",
         "title": "Device Overrides",
@@ -48,7 +60,145 @@
               "required": false,
               "default": false,
               "description": "Enable verbose logging"
+            }
           }
+        }
+      },
+      "scheduler": {
+        "type": "object",
+        "title": "Scheduler Settings",
+        "description": "Settings for temperature schedules and warm awake feature",
+        "condition": {
+          "functionBody": "return model.enableScheduling === true;"
+        },
+        "properties": {
+          "schedules": {
+            "title": "Temperature Schedules",
+            "type": "array",
+            "description": "Create scheduled temperature changes",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "title": "Schedule Name",
+                  "type": "string",
+                  "description": "Name for this schedule"
+                },
+                "enabled": {
+                  "title": "Enabled",
+                  "type": "boolean",
+                  "default": true,
+                  "description": "Enable or disable this schedule"
+                },
+                "days": {
+                  "title": "Days",
+                  "type": "array",
+                  "description": "Days when this schedule applies",
+                  "items": {
+                    "type": "string",
+                    "enum": ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "everyday"]
+                  }
+                },
+                "times": {
+                  "type": "array",
+                  "title": "Scheduled Times",
+                  "description": "Times and temperatures for this schedule",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "time": {
+                        "title": "Time",
+                        "type": "string",
+                        "description": "Time in 24-hour format (HH:MM)",
+                        "placeholder": "22:30"
+                      },
+                      "temperature": {
+                        "title": "Temperature",
+                        "type": "number",
+                        "description": "Target temperature in °C",
+                        "minimum": 13,
+                        "maximum": 46
+                      },
+                      "power": {
+                        "title": "Power",
+                        "type": "string",
+                        "enum": ["on", "off", "no_change"],
+                        "enumNames": ["Turn On", "Turn Off", "No Change"],
+                        "default": "no_change",
+                        "description": "Change power state"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "warmAwake": {
+            "type": "object",
+            "title": "Warm Awake Settings",
+            "description": "Settings for the Warm Awake feature",
+            "properties": {
+              "enabled": {
+                "title": "Enable Warm Awake Feature",
+                "type": "boolean",
+                "default": false,
+                "description": "Gradually increase temperature to wake you up"
+              },
+              "alarms": {
+                "type": "array",
+                "title": "Warm Awake Alarms",
+                "description": "Schedule warm awake events",
+                "condition": {
+                  "functionBody": "return model.scheduler.warmAwake.enabled === true;"
+                },
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "title": "Alarm Name",
+                      "type": "string",
+                      "description": "Name for this alarm"
+                    },
+                    "enabled": {
+                      "title": "Enabled",
+                      "type": "boolean",
+                      "default": true,
+                      "description": "Enable or disable this alarm"
+                    },
+                    "days": {
+                      "title": "Days",
+                      "type": "array",
+                      "description": "Days when this alarm applies",
+                      "items": {
+                        "type": "string",
+                        "enum": ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "everyday"]
+                      }
+                    },
+                    "time": {
+                      "title": "Wake Time",
+                      "type": "string",
+                      "description": "Time to be fully awake in 24-hour format (HH:MM)",
+                      "placeholder": "07:00"
+                    },
+                    "targetTemperature": {
+                      "title": "Wake Temperature",
+                      "type": "number",
+                      "description": "Final target temperature in °C",
+                      "minimum": 13,
+                      "maximum": 46
+                    },
+                    "duration": {
+                      "title": "Warm-up Duration (minutes)",
+                      "type": "number",
+                      "default": 15,
+                      "minimum": 5,
+                      "maximum": 60,
+                      "description": "How long to gradually increase temperature"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }

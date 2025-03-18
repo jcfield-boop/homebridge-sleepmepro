@@ -1,10 +1,10 @@
 {
   "name": "homebridge-sleepmepro",
   "displayName": "Homebridge SleepMePro",
-  "version": "2.0.30",
+  "version": "2.1.0",
   "type": "module",
   "private": false,
-  "description": "Homebridge plugin for SleepMe devices",
+  "description": "Homebridge plugin for SleepMe devices with scheduling and humidity sensing",
   "author": "James Field",
   "license": "MIT",
   "homepage": "https://github.com/jcfield-boop/homebridge-sleepmepro#readme",
@@ -18,7 +18,10 @@
   "keywords": [
     "homebridge-plugin",
     "sleepme",
-    "dockpro"
+    "dockpro",
+    "chilipad",
+    "temperature",
+    "humidity"
   ],
   "main": "dist/index.js",
   "engines": {
@@ -35,11 +38,13 @@
   },
   "dependencies": {
     "axios": "^1.8.3",
-    "homebridge-lib": "^7.1.4"
+    "homebridge-lib": "^7.1.4",
+    "uuid": "^9.0.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.21.0",
     "@types/node": "^18.14.0",
+    "@types/uuid": "^9.0.8",
     "@typescript-eslint/eslint-plugin": "^8.26.1",
     "@typescript-eslint/parser": "^8.26.1",
     "eslint": "^9.21.0",
