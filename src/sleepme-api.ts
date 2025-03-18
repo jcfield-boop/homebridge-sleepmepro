@@ -11,6 +11,7 @@ export interface DeviceStatus {
     "control.target_temperature_c": number;
     "control.current_temperature_c": number;
     "control.thermal_control_status"?: string;
+    "control.power"?: string; // Added this property
     "status.humidity"?: number;
     "about.firmware_version"?: string;
 }
@@ -146,7 +147,9 @@ export class SleepMeApi {
                         21
                     ),
                     "control.thermal_control_status": this.extractNestedValue(response.data, 'thermal_control_status') ||
-                                                     this.extractNestedValue(response.data, 'control.thermal_control_status')
+                                                     this.extractNestedValue(response.data, 'control.thermal_control_status'),
+                    "control.power": this.extractNestedValue(response.data, 'power') ||
+                                     this.extractNestedValue(response.data, 'control.power')
                 };
                 
                 // Extract humidity if available
@@ -249,6 +252,75 @@ export class SleepMeApi {
             return await this.updateDeviceSettings(deviceId, payload);
         } catch (error) {
             this.handleApiError(`setTemperature(${deviceId})`, error);
+            return false;
+        }
+    }
+
+    /**
+     * Set specific device settings
+     * @param deviceId The device ID
+     * @param settings The settings to update as key-value pairs
+     */
+    async setDeviceSettings(deviceId: string, settings: Record<string, any>): Promise<boolean> {
+        if (!deviceId) {
+            this.log.error('[API] setDeviceSettings called with undefined deviceId');
+            return false;
+        }
+        
+        if (!settings || Object.keys(settings).length === 0) {
+            this.log.error('[API] setDeviceSettings called with empty settings');
+            return false;
+        }
+        
+        try {
+            this.log.info(`[API] Setting device ${deviceId} settings: ${JSON.stringify(settings)}`);
+            
+            // Transform dot notation keys into nested objects if needed
+            const payload: Record<string, any> = {};
+            for (const [key, value] of Object.entries(settings)) {
+                if (key.includes('.')) {
+                    // Handle dot notation (e.g., "control.set_temperature_c")
+                    const [section, property] = key.split('.');
+                    if (!payload[section]) {
+                        payload[section] = {};
+                    }
+                    payload[section][property] = value;
+                } else {
+                    // Regular keys
+                    payload[key] = value;
+                }
+            }
+            
+            const success = await this.queueRequest(async () => {
+                this.log.debug(`[API] Sending PATCH request to /devices/${deviceId}`);
+                const response = await axios({
+                    method: 'PATCH',
+                    url: `${this.baseUrl}/devices/${deviceId}`,
+                    headers: {
+                        'Authorization': `Bearer ${this.apiToken}`,
+                        'Content-Type': 'application/json',
+                    },
+                    data: payload,
+                    timeout: 10000
+                });
+                
+                this.logApiResponse('PATCH', `/devices/${deviceId}`, response);
+                
+                if (response.data && this.verbose) {
+                    this.log.debug(`[API] Response data: ${JSON.stringify(response.data)}`);
+                }
+                
+                return response.status >= 200 && response.status < 300;
+            });
+            
+            // If successful, log and optionally verify the changes
+            if (success) {
+                this.log.info(`[API] Successfully updated device ${deviceId} settings`);
+            }
+            
+            return success;
+        } catch (error) {
+            this.handleApiError(`setDeviceSettings(${deviceId})`, error);
             return false;
         }
     }
