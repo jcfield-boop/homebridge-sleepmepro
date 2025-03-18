@@ -1,7 +1,7 @@
 {
   "name": "homebridge-sleepmepro",
   "displayName": "Homebridge SleepMePro",
-  "version": "3.0.3",
+  "version": "3.0.4",
   "type": "module",
   "private": false,
   "description": "Homebridge plugin for SleepMe devices with scheduling and humidity sensing",
