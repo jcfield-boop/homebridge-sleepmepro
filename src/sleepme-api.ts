@@ -11,8 +11,11 @@ export interface DeviceStatus {
     "control.target_temperature_c": number;
     "control.current_temperature_c": number;
     "control.thermal_control_status"?: string;
-    "control.power"?: string; // Added this property
+    "control.power"?: string;
     "status.humidity"?: number;
+    "status.water_warning"?: boolean;
+    "status.water_level_low"?: boolean;
+    "status.water_level"?: string;
     "about.firmware_version"?: string;
 }
 
@@ -158,6 +161,22 @@ export class SleepMeApi {
                                 
                 if (humidity !== undefined && typeof humidity === 'number') {
                     deviceStatus["status.humidity"] = Math.min(100, Math.max(0, Math.round(humidity)));
+                }
+                
+                // Extract water level information if available
+                const waterWarning = this.extractNestedValue(response.data, 'status.water_warning');
+                if (waterWarning !== undefined) {
+                    deviceStatus["status.water_warning"] = !!waterWarning;
+                }
+                
+                const waterLevelLow = this.extractNestedValue(response.data, 'status.water_level_low');
+                if (waterLevelLow !== undefined) {
+                    deviceStatus["status.water_level_low"] = !!waterLevelLow;
+                }
+                
+                const waterLevel = this.extractNestedValue(response.data, 'status.water_level');
+                if (waterLevel !== undefined) {
+                    deviceStatus["status.water_level"] = waterLevel;
                 }
                 
                 // Extract firmware version if available
@@ -578,7 +597,6 @@ export class SleepMeApi {
         
         // Set rate limit cooldown for 60 seconds
         rateLimitResetTime = Date.now() + 60000;
-        
         this.log.warn(
             `[API] Rate limit hit! Increasing delay to ${minRequestDelay}ms ` +
             `and pausing requests for 60 seconds.`

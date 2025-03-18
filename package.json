@@ -10,7 +10,7 @@
   "homepage": "https://github.com/jcfield-boop/homebridge-sleepmepro#readme",
   "repository": {
     "type": "git",
-    "url": "https://github.com/jcfield-boop/homebridge-sleepmepro.git"
+    "url": "git+https://github.com/jcfield-boop/homebridge-sleepmepro.git"
   },
   "bugs": {
     "url": "https://github.com/jcfield-boop/homebridge-sleepmepro/issues"
