@@ -18,6 +18,7 @@ export interface DeviceStatus {
 export interface DeviceSettings {
     "control.set_temperature_c"?: number;
     "control.thermal_control_status"?: string;
+    "control.power"?: string; // Added power control
     // Add other settings properties as needed
 }
 
@@ -26,7 +27,7 @@ export class SleepMeApi {
     private lastRequestTime = 0;
     private rateLimitResetTime = 0;
     private requestCount = 0;
-    private readonly MAX_REQUESTS_PER_MINUTE = 8; // Conservative limit to avoid rate limiting
+    private readonly MAX_REQUESTS_PER_MINUTE = 10; // Updated to match API limit
 
     constructor(
         private readonly apiToken: string, 
@@ -150,6 +151,96 @@ export class SleepMeApi {
     }
 
     /**
+     * Turn the device on with the specified temperature
+     */
+    async turnDeviceOn(deviceId: string, targetTemperature: number): Promise<boolean> {
+        if (!deviceId) {
+            this.log.error('turnDeviceOn called with undefined deviceId');
+            return false;
+        }
+
+        try {
+            const validTemp = this.ensureValidTemperature(targetTemperature);
+            this.log.info(`Turning on device ${deviceId} with temperature ${validTemp}°C`);
+
+            // First set the target temperature
+            await this.respectRateLimit();
+            await axios({
+                method: 'PATCH',
+                url: `${this.baseUrl}/devices/${deviceId}`,
+                headers: {
+                    'Authorization': `Bearer ${this.apiToken}`,
+                    'Content-Type': 'application/json',
+                },
+                data: {
+                    "control.set_temperature_c": validTemp
+                },
+                timeout: 10000
+            });
+            this.trackRequest();
+            this.log.debug('Temperature set successfully');
+
+            // Then turn on the device
+            await this.respectRateLimit();
+            await axios({
+                method: 'PATCH',
+                url: `${this.baseUrl}/devices/${deviceId}`,
+                headers: {
+                    'Authorization': `Bearer ${this.apiToken}`,
+                    'Content-Type': 'application/json',
+                },
+                data: {
+                    "control.power": "on"
+                },
+                timeout: 10000
+            });
+            this.trackRequest();
+            this.log.debug('Power turned on successfully');
+
+            this.log.info(`Successfully turned on device ${deviceId} at ${validTemp}°C`);
+            return true;
+        } catch (error) {
+            this.handleApiError(`turnDeviceOn(${deviceId})`, error);
+            return false;
+        }
+    }
+
+    /**
+     * Turn the device off
+     */
+    async turnDeviceOff(deviceId: string): Promise<boolean> {
+        if (!deviceId) {
+            this.log.error('turnDeviceOff called with undefined deviceId');
+            return false;
+        }
+
+        try {
+            this.log.info(`Turning off device ${deviceId}`);
+            
+            await this.respectRateLimit();
+            await axios({
+                method: 'PATCH',
+                url: `${this.baseUrl}/devices/${deviceId}`,
+                headers: {
+                    'Authorization': `Bearer ${this.apiToken}`,
+                    'Content-Type': 'application/json',
+                },
+                data: {
+                    "control.power": "off"
+                },
+                timeout: 10000
+            });
+            
+            this.trackRequest();
+            this.log.info(`Successfully turned off device ${deviceId}`);
+            return true;
+        } catch (error) {
+            this.handleApiError(`turnDeviceOff(${deviceId})`, error);
+            return false;
+        }
+    }
+
+    /**
      * Update settings for a specific device
      */
     async setDeviceSettings(deviceId: string, settings: DeviceSettings): Promise<boolean> {
@@ -168,7 +259,7 @@ export class SleepMeApi {
             
             await this.respectRateLimit();
             
-            const response = await axios({
+            await axios({
                 method: 'PATCH',
                 url: `${this.baseUrl}/devices/${deviceId}`,
                 headers: {
@@ -180,7 +271,7 @@ export class SleepMeApi {
             });
             
             this.trackRequest();
-            this.log.debug(`API Response Status: ${response.status} for updating device ${deviceId}`);
+            this.log.debug(`Successfully updated settings for device ${deviceId}`);
             this.log.info(`Successfully updated settings for device ${deviceId}`);
             return true;
             
@@ -237,7 +328,7 @@ export class SleepMeApi {
             return MAX_TEMP;
         }
         
-        return Math.round(temp * 10) / 10; // Round to 1 decimal place
+        return Math.round(temp * 2) / 2; // Round to nearest 0.5 degree
     }
 
     /**

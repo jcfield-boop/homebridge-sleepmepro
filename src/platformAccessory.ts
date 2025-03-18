@@ -99,7 +99,7 @@ export class SleepMePlatformAccessory {
           this.updateDeviceStatus()
             .catch(error => this.platform.log.error(`Error updating device status: ${error}`));
         }
-      }, 60000); // Every 60 seconds (reduced from 30 seconds to avoid rate limiting)
+      }, 60000); // Every 60 seconds
     }
   }
 
@@ -138,44 +138,54 @@ export class SleepMePlatformAccessory {
       // Update heating/cooling state based on thermal status and temperature difference
       const thermalStatus = deviceStatus["control.thermal_control_status"] || '';
       
-      // Determine the current state based on thermal status and temperature comparison
-      if (thermalStatus === 'heating' || 
-          (thermalStatus === 'active' && this.targetTemperature > this.currentTemperature + 0.5)) {
-        this.currentHeatingState = this.platform.Characteristic.CurrentHeatingCoolingState.HEAT;
-        this.platform.log.debug(`Device is heating (status: ${thermalStatus})`);
-      } else if (thermalStatus === 'cooling' || 
-                (thermalStatus === 'active' && this.targetTemperature < this.currentTemperature - 0.5)) {
-        this.currentHeatingState = this.platform.Characteristic.CurrentHeatingCoolingState.COOL;
-        this.platform.log.debug(`Device is cooling (status: ${thermalStatus})`);
-      } else if (thermalStatus === 'active') {
-        // If status is active but temperatures are close, device is maintaining temperature
-        this.currentHeatingState = this.platform.Characteristic.CurrentHeatingCoolingState.HEAT;
-        this.platform.log.debug(`Device is active (maintaining temperature)`);
-      } else if (thermalStatus === 'off' || thermalStatus === 'standby') {
-        // If explicitly off or in standby
-        this.currentHeatingState = this.platform.Characteristic.CurrentHeatingCoolingState.OFF;
-        this.platform.log.debug(`Device is off/standby (status: ${thermalStatus})`);
-      } else {
-        // Default behavior for unknown states
-        this.platform.log.debug(`Unknown thermal status: "${thermalStatus}", using temperature difference`);
+      // Determine if the device is heating or cooling
+      let isHeating = false;
+      let isCooling = false;
+      
+      if (thermalStatus === 'active') {
+        // If the device is active, check if it's heating or cooling based on temp difference
         if (this.targetTemperature > this.currentTemperature + 0.5) {
-          this.currentHeatingState = this.platform.Characteristic.CurrentHeatingCoolingState.HEAT;
+          isHeating = true;
+          this.platform.log.debug(`Device is actively heating (${this.currentTemperature}°C → ${this.targetTemperature}°C)`);
         } else if (this.targetTemperature < this.currentTemperature - 0.5) {
-          this.currentHeatingState = this.platform.Characteristic.CurrentHeatingCoolingState.COOL;
+          isCooling = true;
+          this.platform.log.debug(`Device is actively cooling (${this.currentTemperature}°C → ${this.targetTemperature}°C)`);
         } else {
-          this.currentHeatingState = this.platform.Characteristic.CurrentHeatingCoolingState.OFF;
+          // If close to target, assume maintaining temperature (heating)
+          isHeating = true;
+          this.platform.log.debug(`Device is maintaining temperature (${this.currentTemperature}°C ≈ ${this.targetTemperature}°C)`);
         }
+      } else if (thermalStatus === 'heating') {
+        isHeating = true;
+        this.platform.log.debug(`Device is explicitly heating (${this.currentTemperature}°C → ${this.targetTemperature}°C)`);
+      } else if (thermalStatus === 'cooling') {
+        isCooling = true;
+        this.platform.log.debug(`Device is explicitly cooling (${this.currentTemperature}°C → ${this.targetTemperature}°C)`);
+      } else {
+        this.platform.log.debug(`Device is off/standby (status: ${thermalStatus})`);
       }
       
-      // Update the target heating state to match current if it's not already set
-      if (this.targetHeatingState === this.platform.Characteristic.TargetHeatingCoolingState.OFF &&
-          this.currentHeatingState !== this.platform.Characteristic.CurrentHeatingCoolingState.OFF) {
-        this.targetHeatingState = this.platform.Characteristic.TargetHeatingCoolingState.AUTO;
-      } else if (this.currentHeatingState === this.platform.Characteristic.CurrentHeatingCoolingState.OFF &&
-                 this.targetHeatingState !== this.platform.Characteristic.TargetHeatingCoolingState.OFF) {
+      // Set current heating/cooling state
+      if (isHeating) {
+        this.currentHeatingState = this.platform.Characteristic.CurrentHeatingCoolingState.HEAT;
+      } else if (isCooling) {
+        this.currentHeatingState = this.platform.Characteristic.CurrentHeatingCoolingState.COOL;
+      } else {
+        this.currentHeatingState = this.platform.Characteristic.CurrentHeatingCoolingState.OFF;
+      }
+      
+      // Update the target heating state if needed
+      if (thermalStatus === 'active' || thermalStatus === 'heating' || thermalStatus === 'cooling') {
+        // If device is active, ensure target state is not OFF
+        if (this.targetHeatingState === this.platform.Characteristic.TargetHeatingCoolingState.OFF) {
+          this.targetHeatingState = this.platform.Characteristic.TargetHeatingCoolingState.AUTO;
+        }
+      } else {
+        // If device is not active, ensure target state is OFF
         this.targetHeatingState = this.platform.Characteristic.TargetHeatingCoolingState.OFF;
       }
       
+      // Update HomeKit characteristics
       this.service.updateCharacteristic(
         this.platform.Characteristic.CurrentHeatingCoolingState, 
         this.currentHeatingState
@@ -220,6 +230,7 @@ export class SleepMePlatformAccessory {
       const newTemp = this.ensureValidTemperature(value as number);
       this.platform.log.debug(`Setting target temperature to ${newTemp}°C for device ${this.deviceId}`);
       
+      // Just update the temperature if already on
       await this.apiService.setDeviceSettings(this.deviceId, {
         "control.set_temperature_c": newTemp
       });
@@ -234,6 +245,9 @@ export class SleepMePlatformAccessory {
           this.platform.Characteristic.TargetHeatingCoolingState,
           this.targetHeatingState
         );
+        
+        // Turn on the device
+        await this.apiService.turnDeviceOn(this.deviceId, newTemp);
       }
     } catch (error) {
       if (error instanceof Error) {
@@ -267,10 +281,8 @@ export class SleepMePlatformAccessory {
       // Handle different states
       switch (state) {
         case this.platform.Characteristic.TargetHeatingCoolingState.OFF: {
-          // Turn off the device
-          await this.apiService.setDeviceSettings(this.deviceId, {
-            "control.thermal_control_status": "off"
-          });
+          // Turn the device off
+          await this.apiService.turnDeviceOff(this.deviceId);
           break;
         }
           
@@ -279,10 +291,7 @@ export class SleepMePlatformAccessory {
           const heatingTemp = this.ensureValidTemperature(
             Math.max(this.currentTemperature + 2, this.targetTemperature)
           );
-          await this.apiService.setDeviceSettings(this.deviceId, {
-            "control.set_temperature_c": heatingTemp,
-            "control.thermal_control_status": "active"
-          });
+          await this.apiService.turnDeviceOn(this.deviceId, heatingTemp);
           this.targetTemperature = heatingTemp;
           this.service.updateCharacteristic(
             this.platform.Characteristic.TargetTemperature,
@@ -296,10 +305,7 @@ export class SleepMePlatformAccessory {
           const coolingTemp = this.ensureValidTemperature(
             Math.min(this.currentTemperature - 2, this.targetTemperature)
           );
-          await this.apiService.setDeviceSettings(this.deviceId, {
-            "control.set_temperature_c": coolingTemp,
-            "control.thermal_control_status": "active"
-          });
+          await this.apiService.turnDeviceOn(this.deviceId, coolingTemp);
           this.targetTemperature = coolingTemp;
           this.service.updateCharacteristic(
             this.platform.Characteristic.TargetTemperature,
@@ -310,10 +316,7 @@ export class SleepMePlatformAccessory {
           
         case this.platform.Characteristic.TargetHeatingCoolingState.AUTO: {
           // Just use the current target temperature
-          await this.apiService.setDeviceSettings(this.deviceId, {
-            "control.set_temperature_c": this.targetTemperature,
-            "control.thermal_control_status": "active"
-          });
+          await this.apiService.turnDeviceOn(this.deviceId, this.targetTemperature);
           break;
         }
       }
