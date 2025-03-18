@@ -8,8 +8,8 @@ import {
   Service,
 } from 'homebridge';
 
-import { SleepMePlatformAccessory } from './platformAccessory';
-import { SleepMeApi } from './sleepme-api';
+import { SleepMePlatformAccessory } from './platformAccessory.js';
+import { SleepMeApi } from './sleepme-api.js';
 
 export interface Device {
   id: string;

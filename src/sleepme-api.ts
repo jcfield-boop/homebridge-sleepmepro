@@ -13,7 +13,8 @@ interface DeviceStatus {
     // Add other properties based on the API documentation
 }
 
-interface DeviceSettings {
+export interface DeviceSettings {
+    control: any;
     "control.set_temperature_c": number;
     // Add other settings properties as needed
 }
