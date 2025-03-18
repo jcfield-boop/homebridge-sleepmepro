@@ -11,13 +11,19 @@ export interface DeviceStatus {
     "control.target_temperature_c": number;
     "control.current_temperature_c": number;
     "control.thermal_control_status"?: string;
-    "status.humidity"?: number; // Added humidity field
+    "status.humidity"?: number;
 }
 
 export interface DeviceSettings {
     "control.set_temperature_c"?: number;
     "control.thermal_control_status"?: string;
     "control.power"?: string;
+}
+
+interface DeviceControlOptions {
+    power?: 'on' | 'off';
+    temperature?: number;
+    debugMode?: boolean;
 }
 
 // Static rate limiting variables shared across instances
@@ -33,14 +39,17 @@ export class SleepMeApi {
     public readonly baseUrl = 'https://api.developer.sleep.me/v1';
     private readonly MAX_REQUESTS_PER_MINUTE = 8; // Slightly conservative (actual limit is 10)
     private static requestPromise = Promise.resolve<unknown>(null); // For sequential requests
+    private readonly verbose: boolean;
 
     constructor(
         private readonly apiToken: string, 
-        private readonly log: Logger
+        private readonly log: Logger,
+        verbose = false
     ) {
         if (!apiToken || apiToken.trim() === '') {
             this.log.error('Invalid API token provided');
         }
+        this.verbose = verbose;
     }
 
     /**
@@ -157,137 +166,157 @@ export class SleepMeApi {
     }
 
     /**
-     * Turn the device on with the specified temperature
+     * Set device control state based on SleepMe API documentation
+     * According to https://docs.developer.sleep.me/api/
      */
-    async turnDeviceOn(deviceId: string, targetTemperature: number): Promise<boolean> {
+    async controlDevice(deviceId: string, controlOptions: DeviceControlOptions): Promise<boolean> {
         if (!deviceId) {
-            this.log.error('turnDeviceOn called with undefined deviceId');
+            this.log.error('controlDevice called with undefined deviceId');
             return false;
         }
 
+        const { power, temperature, debugMode = false } = controlOptions;
+        const isDebug = debugMode || this.verbose;
+
         try {
-            const validTemp = this.ensureValidTemperature(targetTemperature);
-            this.log.info(`Turning on device ${deviceId} with temperature ${validTemp}°C`);
+            // First get current device state for logging
+            if (isDebug) {
+                const initialStatus = await this.getDeviceStatus(deviceId);
+                this.log.debug(`[DEVICE CONTROL] Initial device state: ${JSON.stringify(initialStatus)}`);
+            }
 
-            // First set the target temperature
-            await this.queueRequest(async () => {
-                await axios({
+            // Prepare the payload according to the docs
+            const payload: Record<string, any> = {};
+            
+            // Add temperature if specified
+            if (temperature !== undefined) {
+                const validTemp = this.ensureValidTemperature(temperature);
+                payload["control.set_temperature_c"] = validTemp;
+                this.log.info(`[DEVICE CONTROL] Setting temperature to ${validTemp}°C`);
+            }
+            
+            // Add power if specified
+            if (power !== undefined) {
+                payload["control.power"] = power;
+                this.log.info(`[DEVICE CONTROL] Setting power to ${power.toUpperCase()}`);
+            }
+            
+            this.log.debug(`[DEVICE CONTROL] Sending payload: ${JSON.stringify(payload)}`);
+            
+            // Send the control command
+            let responseData: any = null;
+            const response = await this.queueRequest(async () => {
+                const response = await axios({
                     method: 'PATCH',
                     url: `${this.baseUrl}/devices/${deviceId}`,
                     headers: {
                         'Authorization': `Bearer ${this.apiToken}`,
                         'Content-Type': 'application/json',
                     },
-                    data: {
-                        "control.set_temperature_c": validTemp
-                    },
+                    data: payload,
                     timeout: 10000
                 });
-                this.log.debug('Temperature set successfully');
-                return true;
+                
+                responseData = response.data;
+                return response;
             });
-
-            // Wait a bit before sending the next command (but don't count this against rate limit)
-            await new Promise(resolve => setTimeout(resolve, 500));
-
-            // Then turn on the device
-            await this.queueRequest(async () => {
-                await axios({
-                    method: 'PATCH',
-                    url: `${this.baseUrl}/devices/${deviceId}`,
-                    headers: {
-                        'Authorization': `Bearer ${this.apiToken}`,
-                        'Content-Type': 'application/json',
-                    },
-                    data: {
-                        "control.power": "on"
-                    },
-                    timeout: 10000
-                });
-                this.log.debug('Power turned on successfully');
-                return true;
-            });
-
-            this.log.info(`Successfully turned on device ${deviceId} at ${validTemp}°C`);
+            
+            this.log.debug(`[DEVICE CONTROL] API response: ${response.status}`);
+            
+            if (responseData) {
+                this.log.debug(`[DEVICE CONTROL] Response data: ${JSON.stringify(responseData)}`);
+            }
+            
+            // Get updated device status
+            if (isDebug) {
+                // Add a small delay to allow the device to update
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                
+                const newStatus = await this.getDeviceStatus(deviceId);
+                this.log.debug(`[DEVICE CONTROL] Updated device state: ${JSON.stringify(newStatus)}`);
+                
+                // Check if the request had the desired effect
+                let powerChanged = true;
+                if (power !== undefined && newStatus) {
+                    const expectedStatus = power === 'on' ? 'active' : 'standby';
+                    const actualStatus = newStatus["control.thermal_control_status"] || 'unknown';
+                    
+                    if (actualStatus !== expectedStatus) {
+                        powerChanged = false;
+                        this.log.warn(`[DEVICE CONTROL] Power state mismatch! Expected: ${expectedStatus}, Actual: ${actualStatus}`);
+                    }
+                }
+                
+                let tempChanged = true;
+                if (temperature !== undefined && newStatus) {
+                    const expectedTemp = this.ensureValidTemperature(temperature);
+                    const actualTemp = newStatus["control.target_temperature_c"];
+                    
+                    if (Math.abs(actualTemp - expectedTemp) > 0.1) { // Allow small rounding differences
+                        tempChanged = false;
+                        this.log.warn(`[DEVICE CONTROL] Temperature mismatch! Expected: ${expectedTemp}°C, Actual: ${actualTemp}°C`);
+                    }
+                }
+                
+                if (!powerChanged || !tempChanged) {
+                    this.log.warn(`[DEVICE CONTROL] Device state did not change as expected. This could indicate an API issue or device connectivity problem.`);
+                } else {
+                    this.log.info(`[DEVICE CONTROL] Successfully updated device state`);
+                }
+            }
+            
             return true;
         } catch (error) {
-            this.handleApiError(`turnDeviceOn(${deviceId})`, error);
+            this.handleApiError(`controlDevice(${deviceId})`, error);
             return false;
         }
     }
 
     /**
-     * Turn the device off
+     * Turn device on - simplified implementation based on API docs
+     */
+    async turnDeviceOn(deviceId: string, temperature?: number): Promise<boolean> {
+        this.log.info(`[DEVICE CONTROL] Turning device ${deviceId} ON${temperature ? ` at ${temperature}°C` : ''}`);
+        
+        // Get current temperature if none provided
+        if (temperature === undefined) {
+            const status = await this.getDeviceStatus(deviceId);
+            if (status && status["control.target_temperature_c"]) {
+                temperature = status["control.target_temperature_c"];
+            } else {
+                temperature = 21; // Default temp if we can't get current
+            }
+        }
+        
+        return this.controlDevice(deviceId, {
+            power: 'on',
+            temperature,
+            debugMode: true
+        });
+    }
+
+    /**
+     * Turn device off - simplified implementation based on API docs
      */
     async turnDeviceOff(deviceId: string): Promise<boolean> {
-        if (!deviceId) {
-            this.log.error('turnDeviceOff called with undefined deviceId');
-            return false;
-        }
-
-        try {
-            this.log.info(`Turning off device ${deviceId}`);
-            
-            return await this.queueRequest(async () => {
-                await axios({
-                    method: 'PATCH',
-                    url: `${this.baseUrl}/devices/${deviceId}`,
-                    headers: {
-                        'Authorization': `Bearer ${this.apiToken}`,
-                        'Content-Type': 'application/json',
-                    },
-                    data: {
-                        "control.power": "off"
-                    },
-                    timeout: 10000
-                });
-                
-                this.log.info(`Successfully turned off device ${deviceId}`);
-                return true;
-            });
-        } catch (error) {
-            this.handleApiError(`turnDeviceOff(${deviceId})`, error);
-            return false;
-        }
+        this.log.info(`[DEVICE CONTROL] Turning device ${deviceId} OFF`);
+        
+        return this.controlDevice(deviceId, {
+            power: 'off',
+            debugMode: true
+        });
     }
 
     /**
-     * Update settings for a specific device
+     * Set device temperature - simplified implementation based on API docs
      */
-    async setDeviceSettings(deviceId: string, settings: DeviceSettings): Promise<boolean> {
-        if (!deviceId) {
-            this.log.error('setDeviceSettings called with undefined deviceId');
-            return false;
-        }
-
-        // Validate temperature settings
-        if (settings["control.set_temperature_c"] !== undefined) {
-            settings["control.set_temperature_c"] = this.ensureValidTemperature(settings["control.set_temperature_c"]);
-        }
-
-        try {
-            this.log.debug(`Setting settings for device ${deviceId}: ${JSON.stringify(settings)}`);
-            
-            return await this.queueRequest(async () => {
-                await axios({
-                    method: 'PATCH',
-                    url: `${this.baseUrl}/devices/${deviceId}`,
-                    headers: {
-                        'Authorization': `Bearer ${this.apiToken}`,
-                        'Content-Type': 'application/json',
-                    },
-                    data: settings,
-                    timeout: 10000
-                });
-                
-                this.log.debug(`Successfully updated settings for device ${deviceId}`);
-                this.log.info(`Successfully updated settings for device ${deviceId}`);
-                return true;
-            });
-        } catch (error) {
-            this.handleApiError(`setDeviceSettings(${deviceId})`, error);
-            return false;
-        }
+    async setTemperature(deviceId: string, temperature: number): Promise<boolean> {
+        this.log.info(`[DEVICE CONTROL] Setting device ${deviceId} temperature to ${temperature}°C`);
+        
+        return this.controlDevice(deviceId, {
+            temperature,
+            debugMode: true
+        });
     }
 
     /**
@@ -342,7 +371,7 @@ export class SleepMeApi {
             throw error;
         }
     }
-
+    
     /**
      * Helper method to extract values from nested objects or flattened objects with dot notation
      */
