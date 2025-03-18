@@ -109,7 +109,7 @@ export class SleepMePlatform implements DynamicPlatformPlugin {
             name: string;
           }
 
-                    const override: DeviceConfig | undefined = this.config.devices?.find((d: DeviceConfig) => d.id === device.id);
+          const override: DeviceConfig | undefined = this.config.devices?.find((d: DeviceConfig) => d.id === device.id);
           if (override) {
             device.name = override.name;
             this.log.debug(`Applied override for device ${device.id}:`, JSON.stringify(override));
