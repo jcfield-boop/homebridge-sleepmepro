@@ -11,7 +11,9 @@ export interface DeviceStatus {
     "control.target_temperature_c": number;
     "control.current_temperature_c": number;
     "control.thermal_control_status"?: string;
+    "control.power"?: string;
     "status.humidity"?: number;
+    "about.firmware_version"?: string;
 }
 
 export interface DeviceSettings {
@@ -20,14 +22,7 @@ export interface DeviceSettings {
     "control.power"?: string;
 }
 
-interface DeviceControlOptions {
-    power?: 'on' | 'off';
-    temperature?: number;
-    debugMode?: boolean;
-}
-
 // Static rate limiting variables shared across instances
-// Track requests per discrete minute
 interface RequestCounts {
     [minute: string]: number;
 }
@@ -37,7 +32,7 @@ let minRequestDelay = 250; // Minimum delay between requests (milliseconds)
 
 export class SleepMeApi {
     public readonly baseUrl = 'https://api.developer.sleep.me/v1';
-    private readonly MAX_REQUESTS_PER_MINUTE = 8; // Slightly conservative (actual limit is 10)
+    private readonly MAX_REQUESTS_PER_MINUTE = 8; // Conservative (actual limit is 10)
     private static requestPromise = Promise.resolve<unknown>(null); // For sequential requests
     private readonly verbose: boolean;
 
@@ -57,9 +52,10 @@ export class SleepMeApi {
      */
     async getDevices(): Promise<Device[]> {
         try {
-            this.log.debug('Getting SleepMe devices...');
+            this.log.debug('[API] Getting SleepMe devices...');
             
             const devices = await this.queueRequest(async () => {
+                this.log.debug('[API] Sending GET request to /devices');
                 const response: AxiosResponse = await axios({
                     method: 'GET',
                     url: `${this.baseUrl}/devices`,
@@ -70,28 +66,32 @@ export class SleepMeApi {
                     },
                     timeout: 10000
                 });
-                this.log.debug(`API Response Status: ${response.status}`);
+                
+                this.logApiResponse('GET', '/devices', response);
                 
                 let devices: Device[] = [];
                 
                 if (Array.isArray(response.data)) {
                     devices = response.data;
+                    this.log.debug(`[API] Found ${devices.length} devices in array response`);
                 } else if (response.data && typeof response.data === 'object' && response.data.devices) {
                     devices = response.data.devices;
+                    this.log.debug(`[API] Found ${devices.length} devices in object.devices response`);
                 } else if (response.data && typeof response.data === 'object') {
                     devices = [response.data];
+                    this.log.debug('[API] Found single device in object response');
                 }
                 
                 // Validate devices have required fields
                 devices = devices.filter(device => {
                     if (!device.id) {
-                        this.log.warn(`Found device without ID: ${JSON.stringify(device)}`);
+                        this.log.warn(`[API] Found device without ID: ${JSON.stringify(device)}`);
                         return false;
                     }
                     return true;
                 });
                 
-                this.log.debug(`Found ${devices.length} valid SleepMe devices`);
+                this.log.debug(`[API] Found ${devices.length} valid SleepMe devices`);
                 return devices;
             });
             
@@ -107,14 +107,15 @@ export class SleepMeApi {
      */
     async getDeviceStatus(deviceId: string): Promise<DeviceStatus | null> {
         if (!deviceId) {
-            this.log.error('getDeviceStatus called with undefined deviceId');
+            this.log.error('[API] getDeviceStatus called with undefined deviceId');
             return null;
         }
         
         try {
-            this.log.debug(`Getting status for device ${deviceId}...`);
+            this.log.debug(`[API] Getting status for device ${deviceId}...`);
             
             return await this.queueRequest(async () => {
+                this.log.debug(`[API] Sending GET request to /devices/${deviceId}`);
                 const response: AxiosResponse = await axios({
                     method: 'GET',
                     url: `${this.baseUrl}/devices/${deviceId}`,
@@ -126,11 +127,15 @@ export class SleepMeApi {
                     timeout: 10000
                 });
                 
-                this.log.debug(`API Response Status: ${response.status} for device ${deviceId}`);
+                this.logApiResponse('GET', `/devices/${deviceId}`, response);
                 
                 if (!response.data) {
-                    this.log.error(`Empty response data for device ${deviceId}`);
+                    this.log.error(`[API] Empty response data for device ${deviceId}`);
                     return null;
+                }
+                
+                if (this.verbose) {
+                    this.log.debug(`[API] Raw device data: ${JSON.stringify(response.data)}`);
                 }
                 
                 // Extract the relevant fields we need
@@ -145,7 +150,8 @@ export class SleepMeApi {
                         this.extractNestedValue(response.data, 'control.current_temperature_c') || 
                         21
                     ),
-                    "control.thermal_control_status": this.extractNestedValue(response.data, 'control.thermal_control_status')
+                    "control.thermal_control_status": this.extractNestedValue(response.data, 'control.thermal_control_status'),
+                    "control.power": this.extractNestedValue(response.data, 'control.power')
                 };
                 
                 // Extract humidity if available
@@ -156,7 +162,13 @@ export class SleepMeApi {
                     deviceStatus["status.humidity"] = Math.min(100, Math.max(0, Math.round(humidity)));
                 }
                 
-                this.log.debug(`Parsed device status: ${JSON.stringify(deviceStatus)}`);
+                // Extract firmware version if available
+                const firmwareVersion = this.extractNestedValue(response.data, 'about.firmware_version');
+                if (firmwareVersion) {
+                    deviceStatus["about.firmware_version"] = firmwareVersion;
+                }
+                
+                this.log.debug(`[API] Parsed device status: ${JSON.stringify(deviceStatus)}`);
                 return deviceStatus;
             });
         } catch (error) {
@@ -166,46 +178,25 @@ export class SleepMeApi {
     }
 
     /**
-     * Set device control state based on SleepMe API documentation
-     * According to https://docs.developer.sleep.me/api/
+     * Update device settings using a PATCH request
+     * This is the core method for controlling a device
      */
-    async controlDevice(deviceId: string, controlOptions: DeviceControlOptions): Promise<boolean> {
+    async setDeviceSettings(deviceId: string, settings: Record<string, any>): Promise<boolean> {
         if (!deviceId) {
-            this.log.error('controlDevice called with undefined deviceId');
+            this.log.error('[API] setDeviceSettings called with undefined deviceId');
             return false;
         }
-
-        const { power, temperature, debugMode = false } = controlOptions;
-        const isDebug = debugMode || this.verbose;
-
+        
+        if (!settings || Object.keys(settings).length === 0) {
+            this.log.error('[API] setDeviceSettings called with empty settings');
+            return false;
+        }
+        
         try {
-            // First get current device state for logging
-            if (isDebug) {
-                const initialStatus = await this.getDeviceStatus(deviceId);
-                this.log.debug(`[DEVICE CONTROL] Initial device state: ${JSON.stringify(initialStatus)}`);
-            }
-
-            // Prepare the payload according to the docs
-            const payload: Record<string, any> = {};
+            this.log.info(`[API] Setting device ${deviceId} settings: ${JSON.stringify(settings)}`);
             
-            // Add temperature if specified
-            if (temperature !== undefined) {
-                const validTemp = this.ensureValidTemperature(temperature);
-                payload["control.set_temperature_c"] = validTemp;
-                this.log.info(`[DEVICE CONTROL] Setting temperature to ${validTemp}°C`);
-            }
-            
-            // Add power if specified
-            if (power !== undefined) {
-                payload["control.power"] = power;
-                this.log.info(`[DEVICE CONTROL] Setting power to ${power.toUpperCase()}`);
-            }
-            
-            this.log.debug(`[DEVICE CONTROL] Sending payload: ${JSON.stringify(payload)}`);
-            
-            // Send the control command
-            let responseData: any = null;
-            const response = await this.queueRequest(async () => {
+            const success = await this.queueRequest(async () => {
+                this.log.debug(`[API] Sending PATCH request to /devices/${deviceId}`);
                 const response = await axios({
                     method: 'PATCH',
                     url: `${this.baseUrl}/devices/${deviceId}`,
@@ -213,115 +204,144 @@ export class SleepMeApi {
                         'Authorization': `Bearer ${this.apiToken}`,
                         'Content-Type': 'application/json',
                     },
-                    data: payload,
+                    data: settings,
                     timeout: 10000
                 });
                 
-                responseData = response.data;
-                return response;
+                this.logApiResponse('PATCH', `/devices/${deviceId}`, response);
+                
+                if (response.data && this.verbose) {
+                    this.log.debug(`[API] Response data: ${JSON.stringify(response.data)}`);
+                }
+                
+                return response.status >= 200 && response.status < 300;
             });
             
-            this.log.debug(`[DEVICE CONTROL] API response: ${response.status}`);
-            
-            if (responseData) {
-                this.log.debug(`[DEVICE CONTROL] Response data: ${JSON.stringify(responseData)}`);
-            }
-            
-            // Get updated device status
-            if (isDebug) {
-                // Add a small delay to allow the device to update
-                await new Promise(resolve => setTimeout(resolve, 1000));
+            // If successful, log and optionally verify the changes
+            if (success) {
+                this.log.info(`[API] Successfully updated device ${deviceId} settings`);
                 
-                const newStatus = await this.getDeviceStatus(deviceId);
-                this.log.debug(`[DEVICE CONTROL] Updated device state: ${JSON.stringify(newStatus)}`);
-                
-                // Check if the request had the desired effect
-                let powerChanged = true;
-                if (power !== undefined && newStatus) {
-                    const expectedStatus = power === 'on' ? 'active' : 'standby';
-                    const actualStatus = newStatus["control.thermal_control_status"] || 'unknown';
-                    
-                    if (actualStatus !== expectedStatus) {
-                        powerChanged = false;
-                        this.log.warn(`[DEVICE CONTROL] Power state mismatch! Expected: ${expectedStatus}, Actual: ${actualStatus}`);
-                    }
-                }
-                
-                let tempChanged = true;
-                if (temperature !== undefined && newStatus) {
-                    const expectedTemp = this.ensureValidTemperature(temperature);
-                    const actualTemp = newStatus["control.target_temperature_c"];
-                    
-                    if (Math.abs(actualTemp - expectedTemp) > 0.1) { // Allow small rounding differences
-                        tempChanged = false;
-                        this.log.warn(`[DEVICE CONTROL] Temperature mismatch! Expected: ${expectedTemp}°C, Actual: ${actualTemp}°C`);
-                    }
-                }
-                
-                if (!powerChanged || !tempChanged) {
-                    this.log.warn(`[DEVICE CONTROL] Device state did not change as expected. This could indicate an API issue or device connectivity problem.`);
-                } else {
-                    this.log.info(`[DEVICE CONTROL] Successfully updated device state`);
+                // Get updated device status for verification (if verbose logging)
+                if (this.verbose) {
+                    // Add a small delay to allow the device to update
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    const updatedStatus = await this.getDeviceStatus(deviceId);
+                    this.log.debug(`[API] Updated device status: ${JSON.stringify(updatedStatus)}`);
                 }
             }
             
-            return true;
+            return success;
         } catch (error) {
-            this.handleApiError(`controlDevice(${deviceId})`, error);
+            this.handleApiError(`setDeviceSettings(${deviceId})`, error);
             return false;
         }
     }
 
     /**
-     * Turn device on - simplified implementation based on API docs
+     * Turn device on with specified temperature
+     * According to API documentation at: https://docs.developer.sleep.me/api/
      */
     async turnDeviceOn(deviceId: string, temperature?: number): Promise<boolean> {
-        this.log.info(`[DEVICE CONTROL] Turning device ${deviceId} ON${temperature ? ` at ${temperature}°C` : ''}`);
-        
-        // Get current temperature if none provided
-        if (temperature === undefined) {
-            const status = await this.getDeviceStatus(deviceId);
-            if (status && status["control.target_temperature_c"]) {
-                temperature = status["control.target_temperature_c"];
-            } else {
-                temperature = 21; // Default temp if we can't get current
+        try {
+            // First get current status to determine current temperature if none provided
+            if (temperature === undefined) {
+                const status = await this.getDeviceStatus(deviceId);
+                if (status && status["control.target_temperature_c"]) {
+                    temperature = status["control.target_temperature_c"];
+                } else {
+                    this.log.debug(`[API] No current temperature available, using default of 21°C`);
+                    temperature = 21;
+                }
             }
+            
+            // Validate temperature
+            const validTemp = this.ensureValidTemperature(temperature);
+            
+            this.log.info(`[API] Turning device ${deviceId} ON with temperature ${validTemp}°C`);
+            
+            // Create payload according to documentation
+            const settings = {
+                "brightness_level": 100, // Set display brightness to max
+                "control.power": "on",   // Power ON
+                "control.set_temperature_c": validTemp // Set temperature
+            };
+            
+            return await this.setDeviceSettings(deviceId, settings);
+        } catch (error) {
+            this.handleApiError(`turnDeviceOn(${deviceId})`, error);
+            return false;
         }
-        
-        return this.controlDevice(deviceId, {
-            power: 'on',
-            temperature,
-            debugMode: true
-        });
     }
 
     /**
-     * Turn device off - simplified implementation based on API docs
+     * Turn device off
+     * According to API documentation at: https://docs.developer.sleep.me/api/
      */
     async turnDeviceOff(deviceId: string): Promise<boolean> {
-        this.log.info(`[DEVICE CONTROL] Turning device ${deviceId} OFF`);
-        
-        return this.controlDevice(deviceId, {
-            power: 'off',
-            debugMode: true
-        });
+        try {
+            this.log.info(`[API] Turning device ${deviceId} OFF`);
+            
+            // Create payload according to documentation
+            const settings = {
+                "control.power": "off" // Power OFF
+            };
+            
+            return await this.setDeviceSettings(deviceId, settings);
+        } catch (error) {
+            this.handleApiError(`turnDeviceOff(${deviceId})`, error);
+            return false;
+        }
     }
 
     /**
-     * Set device temperature - simplified implementation based on API docs
+     * Set temperature only (device must already be on)
+     * According to API documentation at: https://docs.developer.sleep.me/api/
      */
     async setTemperature(deviceId: string, temperature: number): Promise<boolean> {
-        this.log.info(`[DEVICE CONTROL] Setting device ${deviceId} temperature to ${temperature}°C`);
-        
-        return this.controlDevice(deviceId, {
-            temperature,
-            debugMode: true
-        });
+        try {
+            // Validate temperature
+            const validTemp = this.ensureValidTemperature(temperature);
+            
+            this.log.info(`[API] Setting device ${deviceId} temperature to ${validTemp}°C`);
+            
+            // Create payload according to documentation
+            const settings = {
+                "control.set_temperature_c": validTemp // Set temperature
+            };
+            
+            return await this.setDeviceSettings(deviceId, settings);
+        } catch (error) {
+            this.handleApiError(`setTemperature(${deviceId})`, error);
+            return false;
+        }
+    }
+
+    /**
+     * Log API response for debugging
+     */
+    private logApiResponse(method: string, url: string, response: AxiosResponse): void {
+        const logPrefix = '[API]';
+        if (response.status >= 400) {
+            this.log.error(`${logPrefix} ${method} ${url} - Status: ${response.status}`);
+            
+            // Include response data for error debugging
+            if (response.data) {
+                try {
+                    const dataStr = typeof response.data === 'object' 
+                        ? JSON.stringify(response.data)
+                        : String(response.data);
+                    this.log.error(`${logPrefix} Response data: ${dataStr}`);
+                } catch (e) {
+                    this.log.error(`${logPrefix} Response data available but could not stringify`);
+                }
+            }
+        } else {
+            this.log.debug(`${logPrefix} ${method} ${url} - Status: ${response.status}`);
+        }
     }
 
     /**
      * Queue an API request to ensure proper rate limiting
-     * This creates a chain of promises to ensure sequential execution
      */
     private async queueRequest<T>(requestFn: () => Promise<T>): Promise<T> {
         // Create a properly typed Promise that will contain our result
@@ -381,11 +401,6 @@ export class SleepMeApi {
             return data[path];
         }
         
-        // Special case for status.humidity
-        if (path === "status.humidity" && data.status && data.status.humidity !== undefined) {
-            return data.status.humidity;
-        }
-        
         // Then try to traverse the nested path
         const parts = path.split('.');
         let current = data;
@@ -394,6 +409,16 @@ export class SleepMeApi {
             if (current && typeof current === 'object' && part in current) {
                 current = current[part];
             } else {
+                // For special cases like status.humidity check specific object structures
+                if (parts[0] === 'status' && parts.length === 2 && data.status && data.status[parts[1]] !== undefined) {
+                    return data.status[parts[1]];
+                }
+                if (parts[0] === 'control' && parts.length === 2 && data.control && data.control[parts[1]] !== undefined) {
+                    return data.control[parts[1]];
+                }
+                if (parts[0] === 'about' && parts.length === 2 && data.about && data.about[parts[1]] !== undefined) {
+                    return data.about[parts[1]];
+                }
                 return undefined;
             }
         }
@@ -409,17 +434,17 @@ export class SleepMeApi {
         const MAX_TEMP = 46; // 115°F in Celsius
         
         if (typeof temp !== 'number' || isNaN(temp)) {
-            this.log.warn(`Invalid temperature value: ${temp}, using default of 21°C`);
+            this.log.warn(`[API] Invalid temperature value: ${temp}, using default of 21°C`);
             return 21;
         }
         
         if (temp < MIN_TEMP) {
-            this.log.warn(`Temperature value ${temp}°C below minimum, using ${MIN_TEMP}°C`);
+            this.log.warn(`[API] Temperature value ${temp}°C below minimum, using ${MIN_TEMP}°C`);
             return MIN_TEMP;
         }
         
         if (temp > MAX_TEMP) {
-            this.log.warn(`Temperature value ${temp}°C above maximum, using ${MAX_TEMP}°C`);
+            this.log.warn(`[API] Temperature value ${temp}°C above maximum, using ${MAX_TEMP}°C`);
             return MAX_TEMP;
         }
         
@@ -475,7 +500,7 @@ export class SleepMeApi {
         rateLimitResetTime = Date.now() + 60000;
         
         this.log.warn(
-            `Rate limit hit! Increasing delay to ${minRequestDelay}ms ` +
+            `[API] Rate limit hit! Increasing delay to ${minRequestDelay}ms ` +
             `and pausing requests for 60 seconds.`
         );
     }
@@ -489,7 +514,7 @@ export class SleepMeApi {
         // If we hit a rate limit recently, wait until reset time
         if (rateLimitResetTime > currentTime) {
             const delay = rateLimitResetTime - currentTime;
-            this.log.debug(`In rate limit cooldown period, waiting ${delay}ms before next request`);
+            this.log.debug(`[API] In rate limit cooldown period, waiting ${delay}ms before next request`);
             await new Promise(resolve => setTimeout(resolve, delay));
             return;
         }
@@ -506,7 +531,7 @@ export class SleepMeApi {
             const delay = nextMinute.getTime() - currentDate.getTime() + 100; // Add 100ms buffer
             
             this.log.debug(
-                `Rate limit approaching (${currentMinuteRequests}/${this.MAX_REQUESTS_PER_MINUTE} ` +
+                `[API] Rate limit approaching (${currentMinuteRequests}/${this.MAX_REQUESTS_PER_MINUTE} ` +
                 `requests in current minute). Waiting ${delay}ms for next minute.`
             );
             
@@ -514,7 +539,7 @@ export class SleepMeApi {
         }
         
         // Always add a small delay between requests
-        this.log.debug(`Adding standard delay of ${minRequestDelay}ms between requests`);
+        this.log.debug(`[API] Adding standard delay of ${minRequestDelay}ms between requests`);
         await new Promise(resolve => setTimeout(resolve, minRequestDelay));
     }
 
@@ -528,15 +553,15 @@ export class SleepMeApi {
             if (axiosError.response) {
                 // Server responded with error status
                 this.log.error(
-                    `API Error in ${method}: Status ${axiosError.response.status} - ` +
+                    `[API] Error in ${method}: Status ${axiosError.response.status} - ` +
                     `${JSON.stringify(axiosError.response.data)}`
                 );
                 
                 // Handle specific error codes
                 if (axiosError.response.status === 401) {
-                    this.log.error('Authentication failed. Please check your API token.');
+                    this.log.error('[API] Authentication failed. Please check your API token.');
                 } else if (axiosError.response.status === 404) {
-                    this.log.error('Resource not found. Please check if the device ID is correct.');
+                    this.log.error('[API] Resource not found. Please check if the device ID is correct.');
                 } else if (axiosError.response.status === 429) {
                     this.handleRateLimitExceeded();
                 }
@@ -544,21 +569,21 @@ export class SleepMeApi {
             } else if (axiosError.request) {
                 // Request was made but no response received
                 this.log.error(
-                    `API Error in ${method}: No response received - ` +
+                    `[API] Error in ${method}: No response received - ` +
                     `${axiosError.message}`
                 );
-                this.log.error('Please check your network connection and API endpoint.');
+                this.log.error('[API] Please check your network connection and API endpoint.');
                 
             } else {
                 // Error setting up the request
-                this.log.error(`API Error in ${method}: ${axiosError.message}`);
+                this.log.error(`[API] Error in ${method}: ${axiosError.message}`);
             }
             
         } else if (error instanceof Error) {
-            this.log.error(`Error in ${method}: ${error.message}`);
+            this.log.error(`[API] Error in ${method}: ${error.message}`);
             
         } else {
-            this.log.error(`Unknown error in ${method}: ${error}`);
+            this.log.error(`[API] Unknown error in ${method}: ${error}`);
         }
     }
 }
